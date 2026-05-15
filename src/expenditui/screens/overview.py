@@ -24,7 +24,7 @@ def format_money(value) -> str:
 
 
 class OverviewPane(Vertical):
-    CSS = """
+    DEFAULT_CSS = """
     OverviewPane {
         height: 1fr;
         min-height: 0;
@@ -70,7 +70,6 @@ class OverviewPane(Vertical):
     """
 
     def compose(self) -> ComposeResult:
-        yield Static(APP_TITLE, id="overview-title")
         with Vertical(id="overview-totals-section", classes="overview-section"):
             yield Static(id="overview-totals")
         with Vertical(id="overview-visualization-section", classes="overview-section"):
@@ -99,10 +98,6 @@ class OverviewPane(Vertical):
         visualization_background = theme.blend("accent", "surface", 0.18)
         self.styles.background = theme.background
         self.styles.color = theme.foreground
-        self.query_one("#overview-title", Static).set_styles(
-            background=theme.surface,
-            color=theme.accent,
-        )
         totals_section = self.query_one("#overview-totals-section", Vertical)
         totals_section.set_styles(
             background=totals_background,
