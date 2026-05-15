@@ -3,7 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 from types import SimpleNamespace
 
-from recurring_expenses_tui.models import ExpenseEntry, Frequency
+from recurring_expenses_tui.models import EntryType, ExpenseEntry, Frequency
 from recurring_expenses_tui.screens.edit import (
     DraftExpense,
     EditMode,
@@ -45,6 +45,7 @@ class FakeForm:
             "#name-input": FakeInput(app, "name-input"),
             "#amount-input": FakeInput(app, "amount-input"),
             "#frequency-input": FakeInput(app, "frequency-input"),
+            "#tags-input": FakeInput(app, "tags-input"),
         }
 
     def query_one(self, selector: str, _cls: object | None = None) -> FakeInput:
@@ -54,12 +55,14 @@ class FakeForm:
         self.inputs["#name-input"].value = draft.name
         self.inputs["#amount-input"].value = draft.amount
         self.inputs["#frequency-input"].value = draft.frequency
+        self.inputs["#tags-input"].value = draft.tags
 
     def get_draft(self) -> DraftExpense:
         return DraftExpense(
             name=self.inputs["#name-input"].value,
             amount=self.inputs["#amount-input"].value,
             frequency=self.inputs["#frequency-input"].value,
+            tags=self.inputs["#tags-input"].value,
         )
 
     def focus_first_field(self) -> None:
@@ -84,7 +87,7 @@ class FakeForm:
         fields[max(index - 1, 0)].focus()
 
     def is_final_field(self, field: FakeInput) -> bool:
-        return field.id == "frequency-input"
+        return field.id == "tags-input"
 
     def set_class(self, hidden: bool, class_name: str) -> None:
         if class_name == "hidden":
@@ -97,15 +100,17 @@ class FakeForm:
 class FakeTable:
     def __init__(self, app: "FakeApp") -> None:
         self.app = app
-        self.rows: list[tuple[object, object, object]] = []
+        self.rows: list[tuple[object, object, object, object]] = []
         self.cursor_row = 0
         self.styles = SimpleNamespace(background=None, color=None)
 
     def clear(self, *, columns: bool = False) -> None:
         self.rows.clear()
 
-    def add_row(self, name: str, amount: str, frequency: str, *, key: str) -> None:
-        self.rows.append((name, amount, frequency))
+    def add_row(
+        self, name: str, amount: str, frequency: str, tags: str, *, key: str
+    ) -> None:
+        self.rows.append((name, amount, frequency, tags))
 
     def move_cursor(self, *, row: int, column: int, animate: bool = False) -> None:
         self.cursor_row = row
@@ -150,10 +155,16 @@ class FakeDialog(FakeStatic):
 
 
 class FakeApp:
-    def __init__(self, expenses: dict[str, ExpenseEntry]) -> None:
+    def __init__(
+        self,
+        expenses: dict[str, ExpenseEntry],
+        income: dict[str, ExpenseEntry] | None = None,
+    ) -> None:
         self.expenses = dict(expenses)
+        self.income = dict(income or {})
         self.focused: object | None = None
         self.saved_payload: dict[str, ExpenseEntry] | None = None
+        self.saved_dataset: EntryType | None = None
         self.refresh_views_calls = 0
         self.active_theme = AppTheme(
             name="Test",
@@ -167,9 +178,18 @@ class FakeApp:
             muted="#888888",
         )
 
-    def save_state(self, data: dict[str, ExpenseEntry]) -> str | None:
+    def get_entries(self, entry_type: EntryType) -> dict[str, ExpenseEntry]:
+        return self.expenses if entry_type is EntryType.EXPENSE else self.income
+
+    def save_state(
+        self, entry_type: EntryType, data: dict[str, ExpenseEntry]
+    ) -> str | None:
+        self.saved_dataset = entry_type
         self.saved_payload = dict(data)
-        self.expenses = dict(data)
+        if entry_type is EntryType.EXPENSE:
+            self.expenses = dict(data)
+        else:
+            self.income = dict(data)
         return None
 
     def refresh_views(self, *, sync_edit: bool = False) -> None:
@@ -223,8 +243,18 @@ def build_expenses() -> dict[str, ExpenseEntry]:
     }
 
 
+def build_income() -> dict[str, ExpenseEntry]:
+    return {
+        "salary": ExpenseEntry(
+            amount=Decimal("3200.00"),
+            frequency=Frequency.MONTHLY,
+            tags=["Work", "Salary"],
+        )
+    }
+
+
 def build_pane() -> tuple[StubEditPane, FakeApp]:
-    app = FakeApp(build_expenses())
+    app = FakeApp(build_expenses(), build_income())
     pane = StubEditPane(app)
     pane.load_from_app()
     return pane, app
@@ -237,6 +267,7 @@ def test_navigation_mode_hides_form_and_supports_jk_navigation() -> None:
     pane.focus_table()
 
     assert pane.mode is EditMode.NAVIGATION
+    assert pane.active_dataset is EntryType.EXPENSE
     assert pane.current_index == 0
     assert pane.query_one(ExpenseForm).has_class("hidden")
     assert app.focused is table
@@ -249,6 +280,23 @@ def test_navigation_mode_hides_form_and_supports_jk_navigation() -> None:
     assert pane.blocks_theme_switch is False
 
 
+def test_dataset_toggle_switches_rows_and_preserves_selection() -> None:
+    pane, _app = build_pane()
+
+    pane.current_index = 1
+    pane.selection_by_dataset[EntryType.EXPENSE] = pane.selected_name
+    pane.on_key(FakeKeyEvent("i"))
+
+    assert pane.active_dataset is EntryType.INCOME
+    assert [entry.name for entry in pane.entries] == ["salary"]
+    assert pane.query_one("#edit-message").renderable == "Showing recurring income."
+
+    pane.on_key(FakeKeyEvent("i"))
+
+    assert pane.active_dataset is EntryType.EXPENSE
+    assert pane.selected_name == "insurance"
+
+
 def test_create_flow_inserts_below_selection_and_selects_new_entry() -> None:
     pane, app = build_pane()
     table = pane.query_one("#edit-table")
@@ -257,11 +305,14 @@ def test_create_flow_inserts_below_selection_and_selects_new_entry() -> None:
     form = pane.query_one(ExpenseForm)
     form.query_one("#name-input").value = "utilities"
     form.query_one("#amount-input").value = "49.99"
+    form.query_one("#tags-input").value = "Home, Bills"
     pane.submit_form()
 
     assert pane.mode is EditMode.NAVIGATION
     assert pane.selected_name == "utilities"
     assert list(app.expenses) == ["rent", "utilities", "insurance"]
+    assert app.expenses["utilities"].tags == ["Home", "Bills"]
+    assert app.saved_dataset is EntryType.EXPENSE
     assert app.refresh_views_calls == 1
     assert app.focused is table
 
@@ -272,6 +323,7 @@ def test_create_validation_failure_keeps_form_open() -> None:
     pane.start_create()
     form = pane.query_one(ExpenseForm)
     form.query_one("#amount-input").value = "10.00"
+    form.query_one("#tags-input").value = "Work,,Salary"
     pane.submit_form()
 
     assert pane.mode is EditMode.CREATE
@@ -293,7 +345,7 @@ def test_create_duplicate_name_and_save_failure_keep_modal_open() -> None:
     assert app.refresh_views_calls == 0
 
     form.query_one("#name-input").value = "utilities"
-    app.save_state = lambda data: "disk full"  # type: ignore[method-assign]
+    app.save_state = lambda entry_type, data: "disk full"  # type: ignore[method-assign]
     pane.submit_form()
 
     assert pane.mode is EditMode.CREATE
@@ -322,12 +374,36 @@ def test_edit_flow_supports_cancel_and_submit() -> None:
 
     pane.start_edit()
     form.query_one("#amount-input").value = "1250.00"
+    form.query_one("#tags-input").value = "Housing"
     pane.submit_form()
 
     assert pane.mode is EditMode.NAVIGATION
     assert app.expenses["rent"].amount == Decimal("1250.00")
+    assert app.expenses["rent"].tags == ["Housing"]
     assert pane.selected_name == "rent"
     assert app.focused is table
+
+
+def test_create_and_delete_work_in_income_mode() -> None:
+    pane, app = build_pane()
+    pane.toggle_dataset()
+
+    pane.start_create()
+    form = pane.query_one(ExpenseForm)
+    form.query_one("#name-input").value = "bonus"
+    form.query_one("#amount-input").value = "500.00"
+    form.query_one("#frequency-input").value = "annual"
+    form.query_one("#tags-input").value = "Work"
+    pane.submit_form()
+
+    assert list(app.income) == ["salary", "bonus"]
+    assert app.saved_dataset is EntryType.INCOME
+
+    pane.current_index = 1
+    pane.start_delete_confirmation()
+    pane.on_key(FakeKeyEvent("y"))
+
+    assert list(app.income) == ["salary"]
 
 
 def test_keyboard_shortcuts_drive_modal_entry_and_field_navigation() -> None:
@@ -341,6 +417,7 @@ def test_keyboard_shortcuts_drive_modal_entry_and_field_navigation() -> None:
     name_input = form.query_one("#name-input")
     amount_input = form.query_one("#amount-input")
     frequency_input = form.query_one("#frequency-input")
+    tags_input = form.query_one("#tags-input")
 
     assert add_event.stopped
     assert add_event.default_prevented
@@ -355,11 +432,17 @@ def test_keyboard_shortcuts_drive_modal_entry_and_field_navigation() -> None:
     assert tab_event.default_prevented
     assert app.focused is amount_input
 
+    pane.on_key(FakeKeyEvent("tab", character=""))
+    assert app.focused is frequency_input
+
+    pane.on_key(FakeKeyEvent("tab", character=""))
+    assert app.focused is tags_input
+
     shift_tab_event = FakeKeyEvent("shift+tab", character="")
     pane.on_key(shift_tab_event)
     assert shift_tab_event.stopped
     assert shift_tab_event.default_prevented
-    assert app.focused is name_input
+    assert app.focused is frequency_input
 
     escape_event = FakeKeyEvent("escape", character="")
     pane.on_key(escape_event)
@@ -416,8 +499,10 @@ def test_submitted_input_advances_fields_and_final_submit_persists() -> None:
     name_input = form.query_one("#name-input")
     amount_input = form.query_one("#amount-input")
     frequency_input = form.query_one("#frequency-input")
+    tags_input = form.query_one("#tags-input")
     name_input.value = "phone"
     amount_input.value = "25.00"
+    tags_input.value = "Bills"
 
     pane.on_input_submitted(SimpleNamespace(input=name_input, stop=lambda: None))  # type: ignore[arg-type]
     assert app.focused is amount_input
@@ -426,11 +511,15 @@ def test_submitted_input_advances_fields_and_final_submit_persists() -> None:
     assert app.focused is frequency_input
 
     pane.on_input_submitted(SimpleNamespace(input=frequency_input, stop=lambda: None))  # type: ignore[arg-type]
+    assert app.focused is tags_input
+
+    pane.on_input_submitted(SimpleNamespace(input=tags_input, stop=lambda: None))  # type: ignore[arg-type]
     assert list(app.expenses) == ["rent", "phone", "insurance"]
+    assert app.expenses["phone"].tags == ["Bills"]
 
 
 def test_empty_state_edit_and_delete_show_messages_without_leaving_navigation() -> None:
-    app = FakeApp({})
+    app = FakeApp({}, {})
     pane = StubEditPane(app)
     pane.load_from_app()
 

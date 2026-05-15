@@ -40,6 +40,7 @@ class HelpPane(VerticalScroll):
 - h: open Help
 - e: open Edit
 - j / k: move selection down or up in Edit
+- i: toggle between expenses and income in Edit navigation
 - a / A: create an entry in Edit
 - e / E: edit the selected entry in Edit
 - d / D: delete the selected entry in Edit

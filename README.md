@@ -1,16 +1,16 @@
-# Recurring Expenses TUI
+# Recurring Finance TUI
 
-Recurring Expenses TUI is a keyboard-first terminal application for Arch Linux that tracks recurring personal expenditures such as rent, subscriptions, insurance, and other base costs.
+Recurring Finance TUI is a keyboard-first terminal application for Arch Linux that tracks recurring personal expenses and recurring income such as rent, subscriptions, salary, insurance, and other base financial flows.
 
 ## Features
 
-- Automatically load recurring expenses from JSON under the user config directory
-- View monthly and yearly base costs in a Textual Overview tab
-- Add, edit, and delete recurring expenses from a dedicated Edit tab
+- Automatically load recurring expenses and income from JSON under the user config directory
+- View monthly and yearly expense, income, and savings totals in a Textual Overview tab
+- Add, edit, and delete recurring expenses and income from a dedicated Edit tab
 - Read keyboard shortcuts from the Help tab
 - Switch between tabs with visible tab navigation and keyboard shortcuts
 - Load and switch color themes at runtime with persisted theme selection
-- Validate expense names, amounts, and allowed frequencies before saving
+- Validate entry names, amounts, tags, and allowed frequencies before saving
 - Reload data from disk without restarting the app
 
 ## Requirements
@@ -96,6 +96,12 @@ The app stores its data in:
 ~/.config/recurring-expenses-tui/expenses.json
 ```
 
+Recurring income is stored in:
+
+```text
+~/.config/recurring-expenses-tui/income.json
+```
+
 Optional theme configuration is loaded from:
 
 ```text
@@ -121,7 +127,7 @@ Built-in themes include `Dreamy`, `Sandstone`, and `Nord`.
 
 The TUI has three visible tabs:
 
-- `Overview` shows all saved expenses and monthly/yearly totals.
+- `Overview` shows all saved expenses and income with monthly/yearly totals and savings.
 - `Edit` uses a modal workflow for create, edit, and delete operations.
 - `Help` lists the available keyboard shortcuts.
 
@@ -137,6 +143,7 @@ is highlighted by Textual's tab widget.
 - `h` open the Help tab
 - `e` open the Edit tab
 - `j` / `k` move the selected Edit row down or up
+- `i` toggle between expenses and income while in Edit navigation mode
 - `a` / `A` open create mode in Edit
 - `e` / `E` open edit mode for the selected row in Edit
 - `d` / `D` open delete confirmation for the selected row in Edit
@@ -147,13 +154,14 @@ is highlighted by Textual's tab widget.
 
 ## JSON Format
 
-The stored file uses this shape:
+Each storage file uses this shape:
 
 ```json
 {
   "rent": {
     "amount": 1200.0,
-    "frequency": "monthly"
+    "frequency": "monthly",
+    "tags": ["Housing"]
   },
   "netflix": {
     "amount": 12.5,
@@ -166,8 +174,9 @@ The stored file uses this shape:
 }
 ```
 
-Amounts must be non-negative and use at most two decimal places. Expense names
-must be non-empty strings.
+Amounts must be non-negative and use at most two decimal places. Entry names
+must be non-empty strings. Tags are optional, stored as string arrays, limited
+to 10 values per entry, and each tag must be non-empty after trimming.
 
 Supported frequencies are:
 
@@ -190,6 +199,11 @@ Monthly equivalents are calculated as:
 - `annual`: `amount / 12`
 
 The yearly total is the monthly total multiplied by 12.
+
+Savings are calculated from recurring equivalents:
+
+- `monthly savings = monthly income - monthly expenses`
+- `yearly savings = yearly income - yearly expenses`
 
 ## Theme Format
 

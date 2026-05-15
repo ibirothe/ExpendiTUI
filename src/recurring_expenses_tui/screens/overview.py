@@ -7,6 +7,8 @@ from textual.widgets import DataTable, Static
 
 from ..calculations import (
     monthly_equivalent,
+    savings_monthly,
+    savings_yearly,
     total_monthly,
     total_yearly,
     yearly_equivalent,
@@ -51,7 +53,12 @@ class OverviewPane(Vertical):
         table.cursor_type = "row"
         table.zebra_stripes = True
         table.add_columns(
-            "Name", "Amount", "Frequency", "Monthly Equivalent", "Yearly Equivalent"
+            "Type",
+            "Name",
+            "Amount",
+            "Frequency",
+            "Monthly Equivalent",
+            "Yearly Equivalent",
         )
         self.refresh_view()
 
@@ -80,8 +87,19 @@ class OverviewPane(Vertical):
         table.clear(columns=False)
 
         expenses = self.app.expenses
+        income = self.app.income
         for name, entry in expenses.items():
             table.add_row(
+                "Expense",
+                name,
+                format_money(entry.amount),
+                entry.frequency.value,
+                format_money(monthly_equivalent(entry.amount, entry.frequency)),
+                format_money(yearly_equivalent(entry.amount, entry.frequency)),
+            )
+        for name, entry in income.items():
+            table.add_row(
+                "Income",
                 name,
                 format_money(entry.amount),
                 entry.frequency.value,
@@ -89,15 +107,35 @@ class OverviewPane(Vertical):
                 format_money(yearly_equivalent(entry.amount, entry.frequency)),
             )
 
-        monthly_total = total_monthly(expenses)
-        yearly_total = total_yearly(expenses)
+        monthly_expenses = total_monthly(expenses)
+        yearly_expenses = total_yearly(expenses)
+        monthly_income = total_monthly(income)
+        yearly_income = total_yearly(income)
+        monthly_savings = savings_monthly(income, expenses)
+        yearly_savings = savings_yearly(income, expenses)
         totals = Text()
         totals.append(
-            f"Total monthly base cost: {format_money(monthly_total)}\n",
+            f"Monthly expenses: {format_money(monthly_expenses)}\n",
+            style=self.app.theme_rich_style("warning", bold=True),
+        )
+        totals.append(
+            f"Monthly income: {format_money(monthly_income)}\n",
             style=self.app.theme_rich_style("success", bold=True),
         )
         totals.append(
-            f"Total yearly base cost: {format_money(yearly_total)}",
+            f"Monthly savings: {format_money(monthly_savings)}\n",
+            style=self.app.theme_rich_style("accent", bold=True),
+        )
+        totals.append(
+            f"Yearly expenses: {format_money(yearly_expenses)}\n",
+            style=self.app.theme_rich_style("warning", bold=True),
+        )
+        totals.append(
+            f"Yearly income: {format_money(yearly_income)}\n",
+            style=self.app.theme_rich_style("success", bold=True),
+        )
+        totals.append(
+            f"Yearly savings: {format_money(yearly_savings)}",
             style=self.app.theme_rich_style("accent", bold=True),
         )
         self.query_one("#overview-totals", Static).update(totals)

@@ -2,6 +2,8 @@ from decimal import Decimal
 
 from recurring_expenses_tui.calculations import (
     monthly_equivalent,
+    savings_monthly,
+    savings_yearly,
     total_monthly,
     total_yearly,
 )
@@ -27,3 +29,19 @@ def test_monthly_and_yearly_totals() -> None:
 
     assert total_monthly(expenses) == Decimal("1275.00")
     assert total_yearly(expenses) == Decimal("15300.00")
+
+
+def test_savings_support_positive_negative_and_zero_values() -> None:
+    income = {
+        "salary": ExpenseEntry(amount="3200.00", frequency="monthly"),
+    }
+    expenses = {
+        "rent": ExpenseEntry(amount="1200.00", frequency="monthly"),
+        "insurance": ExpenseEntry(amount="600.00", frequency="annual"),
+        "gym": ExpenseEntry(amount="25.00", frequency="monthly"),
+    }
+
+    assert savings_monthly(income, expenses) == Decimal("1925.00")
+    assert savings_yearly(income, expenses) == Decimal("23100.00")
+    assert savings_monthly({}, expenses) == Decimal("-1275.00")
+    assert savings_monthly({}, {}) == Decimal("0.00")

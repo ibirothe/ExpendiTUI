@@ -4,7 +4,7 @@ from decimal import Decimal
 from typing import Mapping
 
 from .constants import MONEY_PLACES, ROUNDING_MODE
-from .models import ExpenseEntry, Frequency
+from .models import FinancialEntry, Frequency
 
 MONTHS_PER_YEAR = Decimal("12")
 FREQUENCY_TO_MONTHLY_FACTOR = {
@@ -36,7 +36,7 @@ def yearly_equivalent(amount: Decimal, frequency: Frequency) -> Decimal:
     )
 
 
-def total_monthly(data: Mapping[str, ExpenseEntry]) -> Decimal:
+def total_monthly(data: Mapping[str, FinancialEntry]) -> Decimal:
     total = sum(
         (
             _monthly_equivalent_precise(entry.amount, entry.frequency)
@@ -47,5 +47,17 @@ def total_monthly(data: Mapping[str, ExpenseEntry]) -> Decimal:
     return quantize_money(total)
 
 
-def total_yearly(data: Mapping[str, ExpenseEntry]) -> Decimal:
+def total_yearly(data: Mapping[str, FinancialEntry]) -> Decimal:
     return quantize_money(total_monthly(data) * MONTHS_PER_YEAR)
+
+
+def savings_monthly(
+    income: Mapping[str, FinancialEntry], expenses: Mapping[str, FinancialEntry]
+) -> Decimal:
+    return quantize_money(total_monthly(income) - total_monthly(expenses))
+
+
+def savings_yearly(
+    income: Mapping[str, FinancialEntry], expenses: Mapping[str, FinancialEntry]
+) -> Decimal:
+    return quantize_money(total_yearly(income) - total_yearly(expenses))
