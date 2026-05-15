@@ -11,9 +11,7 @@ from expenditui.app import (
 
 
 def test_bindings_expose_direct_tab_navigation_without_legacy_edit_actions() -> None:
-    bindings = {
-        binding.key: binding.action for binding in ExpendiTUIApp.BINDINGS
-    }
+    bindings = {binding.key: binding.action for binding in ExpendiTUIApp.BINDINGS}
 
     assert bindings["o"] == "show_overview"
     assert bindings["h"] == "show_help"
