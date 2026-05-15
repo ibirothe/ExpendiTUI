@@ -5,7 +5,12 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 
-from ..calculations import monthly_equivalent, total_monthly, total_yearly, yearly_equivalent
+from ..calculations import (
+    monthly_equivalent,
+    total_monthly,
+    total_yearly,
+    yearly_equivalent,
+)
 from ..constants import APP_TITLE
 from ..theme import AppTheme
 
@@ -45,7 +50,9 @@ class OverviewPane(Vertical):
         table = self.query_one("#overview-table", DataTable)
         table.cursor_type = "row"
         table.zebra_stripes = True
-        table.add_columns("Name", "Amount", "Frequency", "Monthly Equivalent", "Yearly Equivalent")
+        table.add_columns(
+            "Name", "Amount", "Frequency", "Monthly Equivalent", "Yearly Equivalent"
+        )
         self.refresh_view()
 
     def on_screen_resume(self) -> None:

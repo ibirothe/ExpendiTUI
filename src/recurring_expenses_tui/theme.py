@@ -27,39 +27,6 @@ THEME_SLOT_NAMES = (
 HEX_COLOR_PATTERN = re.compile(r"^#(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$")
 BUILTIN_THEME_ROWS: tuple[tuple[str, ...], ...] = (
     (
-        "Dark",
-        "#121212",
-        "#F5F5F5",
-        "#1E1E1E",
-        "#BB86FC",
-        "#03DAC6",
-        "#F4C95D",
-        "#CF6679",
-        "#8E8E93",
-    ),
-    (
-        "Light",
-        "#FFFFFF",
-        "#111111",
-        "#F5F5F5",
-        "#6200EE",
-        "#0F9D58",
-        "#B26A00",
-        "#C62828",
-        "#6B7280",
-    ),
-    (
-        "Ocean",
-        "#011627",
-        "#FDFFFC",
-        "#023047",
-        "#2EC4B6",
-        "#06D6A0",
-        "#FFB703",
-        "#E71D36",
-        "#7FDBFF",
-    ),
-    (
         "Dreamy",
         "#FFF1E6",
         "#6D597A",
@@ -71,7 +38,7 @@ BUILTIN_THEME_ROWS: tuple[tuple[str, ...], ...] = (
         "#E2ECE9",
     ),
     (
-        "Forest",
+        "Sandstone",
         "#F1DDBF",
         "#525E75",
         "#CABEAD",
@@ -111,9 +78,13 @@ class AppTheme:
     def from_row(cls, row: object, *, source: str) -> AppTheme:
         expected_length = len(THEME_SLOT_NAMES) + 1
         if not isinstance(row, list):
-            raise ValueError(f"{source}: expected a list, received {type(row).__name__}.")
+            raise ValueError(
+                f"{source}: expected a list, received {type(row).__name__}."
+            )
         if len(row) != expected_length:
-            raise ValueError(f"{source}: expected {expected_length} entries, received {len(row)}.")
+            raise ValueError(
+                f"{source}: expected {expected_length} entries, received {len(row)}."
+            )
         name, *colors = row
         if not isinstance(name, str) or not name.strip():
             raise ValueError(f"{source}: theme name must be a non-empty string.")
@@ -122,7 +93,10 @@ class AppTheme:
             if not isinstance(color, str) or not HEX_COLOR_PATTERN.fullmatch(color):
                 raise ValueError(f"{source}: invalid {slot_name} color {color!r}.")
             validated_colors.append(color)
-        return cls(name=name.strip(), **dict(zip(THEME_SLOT_NAMES, validated_colors, strict=True)))
+        return cls(
+            name=name.strip(),
+            **dict(zip(THEME_SLOT_NAMES, validated_colors, strict=True)),
+        )
 
     def color(self, slot_name: str) -> str:
         return getattr(self, slot_name)
@@ -217,7 +191,9 @@ class ThemeManager:
         }
         try:
             self.state_path.parent.mkdir(parents=True, exist_ok=True)
-            self.state_path.write_text(f"{json.dumps(payload, indent=2)}\n", encoding="utf-8")
+            self.state_path.write_text(
+                f"{json.dumps(payload, indent=2)}\n", encoding="utf-8"
+            )
         except OSError as exc:
             logger.warning(
                 "Could not persist theme selection to %s: %s",
@@ -240,7 +216,10 @@ class ThemeManager:
 
     def _load_themes_from_file(self) -> list[AppTheme]:
         if not self.themes_path.exists():
-            logger.info("Theme file %s does not exist; using built-in defaults.", self.themes_path)
+            logger.info(
+                "Theme file %s does not exist; using built-in defaults.",
+                self.themes_path,
+            )
             return []
 
         try:
@@ -255,7 +234,9 @@ class ThemeManager:
             )
             return []
         except OSError as exc:
-            logger.warning("Could not read %s: %s", self.themes_path, exc.strerror or exc)
+            logger.warning(
+                "Could not read %s: %s", self.themes_path, exc.strerror or exc
+            )
             return []
 
         if not isinstance(data, list):
@@ -271,7 +252,9 @@ class ThemeManager:
                 logger.warning("Skipping invalid theme definition: %s", exc)
 
         if not themes:
-            logger.warning("Theme file %s did not contain any valid themes.", self.themes_path)
+            logger.warning(
+                "Theme file %s did not contain any valid themes.", self.themes_path
+            )
         return themes
 
     def _restore_selection(self) -> None:
@@ -297,24 +280,34 @@ class ThemeManager:
             )
             return None, True
         except OSError as exc:
-            logger.warning("Could not read %s: %s", self.state_path, exc.strerror or exc)
+            logger.warning(
+                "Could not read %s: %s", self.state_path, exc.strerror or exc
+            )
             return None, True
 
         if not isinstance(data, dict):
-            logger.warning("Persisted theme state in %s must be a JSON object.", self.state_path)
+            logger.warning(
+                "Persisted theme state in %s must be a JSON object.", self.state_path
+            )
             return None, True
 
         name = data.get("theme_name")
         index = data.get("theme_index")
         if name is not None and not isinstance(name, str):
-            logger.warning("Persisted theme name in %s must be a string.", self.state_path)
+            logger.warning(
+                "Persisted theme name in %s must be a string.", self.state_path
+            )
             return None, True
         if index is not None and not isinstance(index, int):
-            logger.warning("Persisted theme index in %s must be an integer.", self.state_path)
+            logger.warning(
+                "Persisted theme index in %s must be an integer.", self.state_path
+            )
             return None, True
         return PersistedThemeSelection(name=name, index=index), False
 
-    def _resolve_selection(self, selection: PersistedThemeSelection | None) -> tuple[int, bool]:
+    def _resolve_selection(
+        self, selection: PersistedThemeSelection | None
+    ) -> tuple[int, bool]:
         if selection is None:
             return 0, True
         if selection.name:

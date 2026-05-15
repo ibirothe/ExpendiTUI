@@ -4,7 +4,14 @@ from decimal import Decimal, InvalidOperation
 from enum import Enum
 from typing import Mapping
 
-from pydantic import BaseModel, ConfigDict, RootModel, ValidationError, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    RootModel,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from .constants import FREQUENCY_VALUES, MONEY_PLACES, ROUNDING_MODE
 
@@ -75,7 +82,9 @@ def validate_expense_mapping(data: object) -> dict[str, ExpenseEntry]:
     return ExpenseCollection.model_validate(data).root
 
 
-def dump_expense_mapping(data: Mapping[str, ExpenseEntry]) -> dict[str, dict[str, object]]:
+def dump_expense_mapping(
+    data: Mapping[str, ExpenseEntry],
+) -> dict[str, dict[str, object]]:
     validated = validate_expense_mapping(dict(data))
     payload: dict[str, dict[str, object]] = {}
     for name, entry in validated.items():

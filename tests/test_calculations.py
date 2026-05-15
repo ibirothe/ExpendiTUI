@@ -1,6 +1,10 @@
 from decimal import Decimal
 
-from recurring_expenses_tui.calculations import monthly_equivalent, total_monthly, total_yearly
+from recurring_expenses_tui.calculations import (
+    monthly_equivalent,
+    total_monthly,
+    total_yearly,
+)
 from recurring_expenses_tui.models import ExpenseEntry, Frequency
 
 

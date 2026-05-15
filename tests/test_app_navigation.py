@@ -2,11 +2,18 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from recurring_expenses_tui.app import EDIT_TAB, HELP_TAB, OVERVIEW_TAB, RecurringExpensesApp
+from recurring_expenses_tui.app import (
+    EDIT_TAB,
+    HELP_TAB,
+    OVERVIEW_TAB,
+    RecurringExpensesApp,
+)
 
 
 def test_bindings_expose_direct_tab_navigation_without_legacy_edit_actions() -> None:
-    bindings = {binding.key: binding.action for binding in RecurringExpensesApp.BINDINGS}
+    bindings = {
+        binding.key: binding.action for binding in RecurringExpensesApp.BINDINGS
+    }
 
     assert bindings["o"] == "show_overview"
     assert bindings["h"] == "show_help"
@@ -85,13 +92,19 @@ def test_cycle_theme_action_respects_edit_form_blocking(monkeypatch) -> None:
     assert app.check_action("cycle_theme", ()) is True
 
 
-def test_tab_activation_stays_on_edit_when_modal_state_blocks_navigation(monkeypatch) -> None:
+def test_tab_activation_stays_on_edit_when_modal_state_blocks_navigation(
+    monkeypatch,
+) -> None:
     app = RecurringExpensesApp()
     tabs = SimpleNamespace(active=EDIT_TAB)
     app.active_tab_id = EDIT_TAB
 
     monkeypatch.setattr(app, "edit_mode_blocks_global_actions", lambda: True)
-    monkeypatch.setattr(app, "query_one", lambda selector, *_args: tabs if selector == "#main-tabs" else None)
+    monkeypatch.setattr(
+        app,
+        "query_one",
+        lambda selector, *_args: tabs if selector == "#main-tabs" else None,
+    )
 
     event = SimpleNamespace(pane=SimpleNamespace(id=HELP_TAB))
     app.on_tabbed_content_tab_activated(event)  # type: ignore[arg-type]
@@ -119,7 +132,9 @@ def test_tab_activation_refreshes_destination_view_and_bindings(monkeypatch) -> 
         raise AssertionError(f"Unexpected selector: {selector!r}")
 
     monkeypatch.setattr(app, "query_one", fake_query_one)
-    monkeypatch.setattr(app, "refresh_bindings", lambda: bindings_calls.append(app.active_tab_id))
+    monkeypatch.setattr(
+        app, "refresh_bindings", lambda: bindings_calls.append(app.active_tab_id)
+    )
 
     app.on_tabbed_content_tab_activated(SimpleNamespace(pane=SimpleNamespace(id=OVERVIEW_TAB)))  # type: ignore[arg-type]
     app.on_tabbed_content_tab_activated(SimpleNamespace(pane=SimpleNamespace(id=EDIT_TAB)))  # type: ignore[arg-type]
@@ -135,8 +150,14 @@ def test_cycle_theme_action_updates_theme_and_refreshes_views(monkeypatch) -> No
 
     monkeypatch.setattr(app, "theme_switch_blocks_global_actions", lambda: False)
     monkeypatch.setattr(app.theme_manager, "cycle_next", lambda: calls.append("cycle"))
-    monkeypatch.setattr(app, "apply_theme", lambda announce=False: calls.append(f"apply:{announce}"))
-    monkeypatch.setattr(app, "refresh_views", lambda *, sync_edit=False: calls.append(f"refresh:{sync_edit}"))
+    monkeypatch.setattr(
+        app, "apply_theme", lambda announce=False: calls.append(f"apply:{announce}")
+    )
+    monkeypatch.setattr(
+        app,
+        "refresh_views",
+        lambda *, sync_edit=False: calls.append(f"refresh:{sync_edit}"),
+    )
     monkeypatch.setattr(app, "refresh_bindings", lambda: calls.append("bindings"))
 
     app.action_cycle_theme()

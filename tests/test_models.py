@@ -30,4 +30,6 @@ def test_invalid_frequency_rejection() -> None:
 
 def test_blank_name_rejection() -> None:
     with pytest.raises(Exception):
-        ExpenseCollection.model_validate({"   ": {"amount": "10.00", "frequency": "monthly"}})
+        ExpenseCollection.model_validate(
+            {"   ": {"amount": "10.00", "frequency": "monthly"}}
+        )

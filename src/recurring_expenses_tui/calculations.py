@@ -31,11 +31,19 @@ def monthly_equivalent(amount: Decimal, frequency: Frequency) -> Decimal:
 
 
 def yearly_equivalent(amount: Decimal, frequency: Frequency) -> Decimal:
-    return quantize_money(_monthly_equivalent_precise(amount, frequency) * MONTHS_PER_YEAR)
+    return quantize_money(
+        _monthly_equivalent_precise(amount, frequency) * MONTHS_PER_YEAR
+    )
 
 
 def total_monthly(data: Mapping[str, ExpenseEntry]) -> Decimal:
-    total = sum((_monthly_equivalent_precise(entry.amount, entry.frequency) for entry in data.values()), Decimal("0"))
+    total = sum(
+        (
+            _monthly_equivalent_precise(entry.amount, entry.frequency)
+            for entry in data.values()
+        ),
+        Decimal("0"),
+    )
     return quantize_money(total)
 
 

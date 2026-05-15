@@ -10,7 +10,9 @@ from recurring_expenses_tui.storage import StorageError, load_expenses, save_exp
 
 def test_load_missing_file_creates_empty_json(tmp_path, monkeypatch) -> None:
     expenses_path = tmp_path / "expenses.json"
-    monkeypatch.setattr("recurring_expenses_tui.storage.get_expenses_path", lambda: expenses_path)
+    monkeypatch.setattr(
+        "recurring_expenses_tui.storage.get_expenses_path", lambda: expenses_path
+    )
 
     loaded = load_expenses()
 
@@ -21,7 +23,9 @@ def test_load_missing_file_creates_empty_json(tmp_path, monkeypatch) -> None:
 
 def test_json_load_save_behavior(tmp_path, monkeypatch) -> None:
     expenses_path = tmp_path / "expenses.json"
-    monkeypatch.setattr("recurring_expenses_tui.storage.get_expenses_path", lambda: expenses_path)
+    monkeypatch.setattr(
+        "recurring_expenses_tui.storage.get_expenses_path", lambda: expenses_path
+    )
 
     save_expenses(
         {
@@ -48,7 +52,9 @@ def test_load_expenses_reads_valid_json_file(tmp_path, monkeypatch) -> None:
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr("recurring_expenses_tui.storage.get_expenses_path", lambda: expenses_path)
+    monkeypatch.setattr(
+        "recurring_expenses_tui.storage.get_expenses_path", lambda: expenses_path
+    )
 
     loaded = load_expenses()
 
@@ -57,9 +63,13 @@ def test_load_expenses_reads_valid_json_file(tmp_path, monkeypatch) -> None:
     assert loaded["internet"].frequency.value == "monthly"
 
 
-def test_save_expenses_writes_json_with_at_most_two_decimal_places(tmp_path, monkeypatch) -> None:
+def test_save_expenses_writes_json_with_at_most_two_decimal_places(
+    tmp_path, monkeypatch
+) -> None:
     expenses_path = tmp_path / "expenses.json"
-    monkeypatch.setattr("recurring_expenses_tui.storage.get_expenses_path", lambda: expenses_path)
+    monkeypatch.setattr(
+        "recurring_expenses_tui.storage.get_expenses_path", lambda: expenses_path
+    )
 
     save_expenses(
         {
@@ -78,7 +88,9 @@ def test_save_expenses_writes_json_with_at_most_two_decimal_places(tmp_path, mon
 
 def test_valid_json_load_save_roundtrip(tmp_path, monkeypatch) -> None:
     expenses_path = tmp_path / "expenses.json"
-    monkeypatch.setattr("recurring_expenses_tui.storage.get_expenses_path", lambda: expenses_path)
+    monkeypatch.setattr(
+        "recurring_expenses_tui.storage.get_expenses_path", lambda: expenses_path
+    )
 
     original = {
         "rent": ExpenseEntry(amount="1200.00", frequency="monthly"),
@@ -98,7 +110,9 @@ def test_valid_json_load_save_roundtrip(tmp_path, monkeypatch) -> None:
 def test_invalid_json_is_reported(tmp_path, monkeypatch) -> None:
     expenses_path = tmp_path / "expenses.json"
     expenses_path.write_text("{ invalid json", encoding="utf-8")
-    monkeypatch.setattr("recurring_expenses_tui.storage.get_expenses_path", lambda: expenses_path)
+    monkeypatch.setattr(
+        "recurring_expenses_tui.storage.get_expenses_path", lambda: expenses_path
+    )
 
     with pytest.raises(StorageError, match="Invalid JSON"):
         load_expenses()
@@ -110,17 +124,25 @@ def test_invalid_entry_is_reported(tmp_path, monkeypatch) -> None:
         json.dumps({"rent": {"amount": -5, "frequency": "monthly"}}, indent=2),
         encoding="utf-8",
     )
-    monkeypatch.setattr("recurring_expenses_tui.storage.get_expenses_path", lambda: expenses_path)
+    monkeypatch.setattr(
+        "recurring_expenses_tui.storage.get_expenses_path", lambda: expenses_path
+    )
 
     with pytest.raises(StorageError, match="Invalid expense data"):
         load_expenses()
 
 
-def test_app_load_state_handles_invalid_json_without_crashing(tmp_path, monkeypatch) -> None:
+def test_app_load_state_handles_invalid_json_without_crashing(
+    tmp_path, monkeypatch
+) -> None:
     expenses_path = tmp_path / "expenses.json"
     expenses_path.write_text("{ invalid json", encoding="utf-8")
-    monkeypatch.setattr("recurring_expenses_tui.storage.get_expenses_path", lambda: expenses_path)
-    monkeypatch.setattr("recurring_expenses_tui.app.get_expenses_path", lambda: expenses_path)
+    monkeypatch.setattr(
+        "recurring_expenses_tui.storage.get_expenses_path", lambda: expenses_path
+    )
+    monkeypatch.setattr(
+        "recurring_expenses_tui.app.get_expenses_path", lambda: expenses_path
+    )
 
     app = RecurringExpensesApp()
 

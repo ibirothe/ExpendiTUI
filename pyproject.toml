@@ -17,6 +17,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+  "black>=24.0.0",
   "pytest>=8.2.0",
 ]
 
@@ -25,6 +26,9 @@ recurring-expenses-tui = "recurring_expenses_tui.app:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.black]
+target-version = ["py312"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

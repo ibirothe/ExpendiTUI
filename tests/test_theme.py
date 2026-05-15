@@ -22,7 +22,9 @@ def build_theme_row(name: str, accent: str = "#3366FF") -> list[str]:
     ]
 
 
-def test_theme_manager_loads_valid_rows_and_skips_invalid_rows(tmp_path, caplog) -> None:
+def test_theme_manager_loads_valid_rows_and_skips_invalid_rows(
+    tmp_path, caplog
+) -> None:
     themes_path = tmp_path / "themes.json"
     state_path = tmp_path / "ui-state.json"
     themes_path.write_text(
@@ -43,19 +45,20 @@ def test_theme_manager_loads_valid_rows_and_skips_invalid_rows(tmp_path, caplog)
     assert "Skipping invalid theme definition" in caplog.text
 
 
-def test_theme_manager_falls_back_to_built_in_defaults_when_file_is_missing(tmp_path) -> None:
+def test_theme_manager_falls_back_to_built_in_defaults_when_file_is_missing(
+    tmp_path,
+) -> None:
     manager = ThemeManager(
         themes_path=tmp_path / "missing-themes.json",
         state_path=tmp_path / "ui-state.json",
     )
 
-    assert [theme.name for theme in manager.themes] == [row[0] for row in BUILTIN_THEME_ROWS]
     assert [theme.name for theme in manager.themes] == [
-        "Dark",
-        "Light",
-        "Ocean",
+        row[0] for row in BUILTIN_THEME_ROWS
+    ]
+    assert [theme.name for theme in manager.themes] == [
         "Dreamy",
-        "Forest",
+        "Sandstone",
         "Nord",
     ]
     assert manager.active_index == 0
@@ -140,6 +143,8 @@ def test_app_build_theme_css_covers_component_styles() -> None:
 def test_app_build_theme_css_parses_with_textual() -> None:
     app = RecurringExpensesApp()
     stylesheet = Stylesheet()
-    stylesheet.add_source(app._build_theme_css(app.active_theme), read_from=("test.css", "theme"))
+    stylesheet.add_source(
+        app._build_theme_css(app.active_theme), read_from=("test.css", "theme")
+    )
 
     stylesheet.parse()
