@@ -4,6 +4,8 @@ from textual.app import ComposeResult
 from textual.containers import VerticalScroll
 from textual.widgets import Markdown
 
+from ..theme import AppTheme
+
 
 class HelpPane(VerticalScroll):
     CSS = """
@@ -20,11 +22,20 @@ class HelpPane(VerticalScroll):
     def compose(self) -> ComposeResult:
         yield Markdown(self.help_markdown, id="help-content")
 
+    def apply_theme(self, theme: AppTheme) -> None:
+        self.styles.background = theme.background
+        self.styles.color = theme.foreground
+        self.query_one("#help-content", Markdown).set_styles(
+            background=theme.background,
+            color=theme.foreground,
+        )
+
     @property
     def help_markdown(self) -> str:
         return """
 # Keyboard Shortcuts
 
+- t: cycle themes globally, except while typing in Edit create or edit forms
 - o: open Overview
 - h: open Help
 - e: open Edit

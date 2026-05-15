@@ -1,0 +1,330 @@
+from __future__ import annotations
+
+import json
+import logging
+import re
+from dataclasses import dataclass
+from pathlib import Path
+
+from platformdirs import user_config_path
+
+from .constants import APP_NAME
+
+logger = logging.getLogger(__name__)
+
+THEMES_FILENAME = "themes.json"
+THEME_STATE_FILENAME = "ui-state.json"
+THEME_SLOT_NAMES = (
+    "background",
+    "foreground",
+    "surface",
+    "accent",
+    "success",
+    "warning",
+    "error",
+    "muted",
+)
+HEX_COLOR_PATTERN = re.compile(r"^#(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$")
+BUILTIN_THEME_ROWS: tuple[tuple[str, ...], ...] = (
+    (
+        "Dark",
+        "#121212",
+        "#F5F5F5",
+        "#1E1E1E",
+        "#BB86FC",
+        "#03DAC6",
+        "#F4C95D",
+        "#CF6679",
+        "#8E8E93",
+    ),
+    (
+        "Light",
+        "#FFFFFF",
+        "#111111",
+        "#F5F5F5",
+        "#6200EE",
+        "#0F9D58",
+        "#B26A00",
+        "#C62828",
+        "#6B7280",
+    ),
+    (
+        "Ocean",
+        "#011627",
+        "#FDFFFC",
+        "#023047",
+        "#2EC4B6",
+        "#06D6A0",
+        "#FFB703",
+        "#E71D36",
+        "#7FDBFF",
+    ),
+    (
+        "Dreamy",
+        "#FFF1E6",
+        "#6D597A",
+        "#F0EFEB",
+        "#CDDAFD",
+        "#BEE1E6",
+        "#CEAE4E",
+        "#B56576",
+        "#E2ECE9",
+    ),
+    (
+        "Forest",
+        "#F1DDBF",
+        "#525E75",
+        "#CABEAD",
+        "#85A78E",
+        "#92BA92",
+        "#B8845F",
+        "#7D5A50",
+        "#A29E9A",
+    ),
+    (
+        "Nord",
+        "#292929",
+        "#CACBCD",
+        "#2A2A2B",
+        "#8AACCE",
+        "#9EB889",
+        "#E4C588",
+        "#937791",
+        "#6F7278",
+    ),
+)
+
+
+@dataclass(frozen=True, slots=True)
+class AppTheme:
+    name: str
+    background: str
+    foreground: str
+    surface: str
+    accent: str
+    success: str
+    warning: str
+    error: str
+    muted: str
+
+    @classmethod
+    def from_row(cls, row: object, *, source: str) -> AppTheme:
+        expected_length = len(THEME_SLOT_NAMES) + 1
+        if not isinstance(row, list):
+            raise ValueError(f"{source}: expected a list, received {type(row).__name__}.")
+        if len(row) != expected_length:
+            raise ValueError(f"{source}: expected {expected_length} entries, received {len(row)}.")
+        name, *colors = row
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError(f"{source}: theme name must be a non-empty string.")
+        validated_colors: list[str] = []
+        for slot_name, color in zip(THEME_SLOT_NAMES, colors, strict=True):
+            if not isinstance(color, str) or not HEX_COLOR_PATTERN.fullmatch(color):
+                raise ValueError(f"{source}: invalid {slot_name} color {color!r}.")
+            validated_colors.append(color)
+        return cls(name=name.strip(), **dict(zip(THEME_SLOT_NAMES, validated_colors, strict=True)))
+
+    def color(self, slot_name: str) -> str:
+        return getattr(self, slot_name)
+
+    def blend(self, first_slot: str, second_slot: str, ratio: float) -> str:
+        ratio = max(0.0, min(1.0, ratio))
+        first = _hex_to_rgb(self.color(first_slot))
+        second = _hex_to_rgb(self.color(second_slot))
+        blended = tuple(
+            round(first_value * ratio + second_value * (1.0 - ratio))
+            for first_value, second_value in zip(first, second, strict=True)
+        )
+        return _rgb_to_hex(blended)
+
+    def rich_style(
+        self,
+        foreground_slot: str,
+        *,
+        background_slot: str | None = None,
+        bold: bool = False,
+    ) -> str:
+        parts: list[str] = []
+        if bold:
+            parts.append("bold")
+        parts.append(self.color(foreground_slot))
+        if background_slot is not None:
+            parts.append(f"on {self.color(background_slot)}")
+        return " ".join(parts)
+
+
+@dataclass(frozen=True, slots=True)
+class PersistedThemeSelection:
+    name: str | None
+    index: int | None
+
+
+def _hex_to_rgb(value: str) -> tuple[int, int, int]:
+    normalized = value.removeprefix("#")
+    if len(normalized) == 3:
+        normalized = "".join(character * 2 for character in normalized)
+    if len(normalized) == 8:
+        normalized = normalized[:6]
+    return (
+        int(normalized[0:2], 16),
+        int(normalized[2:4], 16),
+        int(normalized[4:6], 16),
+    )
+
+
+def _rgb_to_hex(value: tuple[int, int, int]) -> str:
+    return "#{:02X}{:02X}{:02X}".format(*value)
+
+
+def get_config_dir() -> Path:
+    return user_config_path(APP_NAME)
+
+
+def get_themes_path() -> Path:
+    return get_config_dir() / THEMES_FILENAME
+
+
+def get_theme_state_path() -> Path:
+    return get_config_dir() / THEME_STATE_FILENAME
+
+
+class ThemeManager:
+    def __init__(
+        self,
+        *,
+        themes_path: Path | None = None,
+        state_path: Path | None = None,
+    ) -> None:
+        self.themes_path = themes_path or get_themes_path()
+        self.state_path = state_path or get_theme_state_path()
+        self.themes = self._load_themes()
+        self.active_index = 0
+        self._restore_selection()
+
+    @property
+    def active_theme(self) -> AppTheme:
+        return self.themes[self.active_index]
+
+    def cycle_next(self) -> AppTheme:
+        self.active_index = (self.active_index + 1) % len(self.themes)
+        self.persist_selection()
+        return self.active_theme
+
+    def persist_selection(self) -> None:
+        payload = {
+            "theme_name": self.active_theme.name,
+            "theme_index": self.active_index,
+        }
+        try:
+            self.state_path.parent.mkdir(parents=True, exist_ok=True)
+            self.state_path.write_text(f"{json.dumps(payload, indent=2)}\n", encoding="utf-8")
+        except OSError as exc:
+            logger.warning(
+                "Could not persist theme selection to %s: %s",
+                self.state_path,
+                exc.strerror or exc,
+            )
+
+    def _load_themes(self) -> list[AppTheme]:
+        loaded = self._load_themes_from_file()
+        if loaded:
+            return loaded
+        if self.themes_path.exists():
+            logger.warning("Using built-in default themes.")
+        else:
+            logger.info("Using built-in default themes.")
+        return [
+            AppTheme.from_row(list(row), source=f"built-in theme {index}")
+            for index, row in enumerate(BUILTIN_THEME_ROWS, start=1)
+        ]
+
+    def _load_themes_from_file(self) -> list[AppTheme]:
+        if not self.themes_path.exists():
+            logger.info("Theme file %s does not exist; using built-in defaults.", self.themes_path)
+            return []
+
+        try:
+            data = json.loads(self.themes_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            logger.warning(
+                "Invalid JSON in %s: %s at line %s, column %s.",
+                self.themes_path,
+                exc.msg,
+                exc.lineno,
+                exc.colno,
+            )
+            return []
+        except OSError as exc:
+            logger.warning("Could not read %s: %s", self.themes_path, exc.strerror or exc)
+            return []
+
+        if not isinstance(data, list):
+            logger.warning("Theme file %s must contain a JSON array.", self.themes_path)
+            return []
+
+        themes: list[AppTheme] = []
+        for row_index, row in enumerate(data, start=1):
+            source = f"{self.themes_path} row {row_index}"
+            try:
+                themes.append(AppTheme.from_row(row, source=source))
+            except ValueError as exc:
+                logger.warning("Skipping invalid theme definition: %s", exc)
+
+        if not themes:
+            logger.warning("Theme file %s did not contain any valid themes.", self.themes_path)
+        return themes
+
+    def _restore_selection(self) -> None:
+        selection, should_reset = self._read_persisted_selection()
+        resolved_index, matched = self._resolve_selection(selection)
+        self.active_index = resolved_index
+        if should_reset or (selection is not None and not matched):
+            self.persist_selection()
+
+    def _read_persisted_selection(self) -> tuple[PersistedThemeSelection | None, bool]:
+        if not self.state_path.exists():
+            return None, False
+
+        try:
+            data = json.loads(self.state_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            logger.warning(
+                "Invalid persisted theme state in %s: %s at line %s, column %s.",
+                self.state_path,
+                exc.msg,
+                exc.lineno,
+                exc.colno,
+            )
+            return None, True
+        except OSError as exc:
+            logger.warning("Could not read %s: %s", self.state_path, exc.strerror or exc)
+            return None, True
+
+        if not isinstance(data, dict):
+            logger.warning("Persisted theme state in %s must be a JSON object.", self.state_path)
+            return None, True
+
+        name = data.get("theme_name")
+        index = data.get("theme_index")
+        if name is not None and not isinstance(name, str):
+            logger.warning("Persisted theme name in %s must be a string.", self.state_path)
+            return None, True
+        if index is not None and not isinstance(index, int):
+            logger.warning("Persisted theme index in %s must be an integer.", self.state_path)
+            return None, True
+        return PersistedThemeSelection(name=name, index=index), False
+
+    def _resolve_selection(self, selection: PersistedThemeSelection | None) -> tuple[int, bool]:
+        if selection is None:
+            return 0, True
+        if selection.name:
+            for index, theme in enumerate(self.themes):
+                if theme.name == selection.name:
+                    return index, True
+        if selection.index is not None and 0 <= selection.index < len(self.themes):
+            return selection.index, True
+        logger.warning(
+            "Persisted theme selection %r did not match the current theme set; falling back to index 0.",
+            selection,
+        )
+        return 0, False
