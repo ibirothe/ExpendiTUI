@@ -10,6 +10,7 @@ from .models import EntryType, FinancialEntry
 from .screens.edit import EditPane
 from .screens.help import HelpPane
 from .screens.overview import OverviewPane
+from .screens.settings import SettingsPane
 from .storage import (
     StorageError,
     get_dataset_path,
@@ -22,10 +23,17 @@ from .storage import (
 )
 from .tags import TagRegistry
 from .theme import AppTheme, ThemeManager
+from .visualization import (
+    VisualizationConfig,
+    VisualizationConfigManager,
+    VisualizationRenderer,
+    VisualizationResult,
+)
 
 OVERVIEW_TAB = "overview-tab"
 EDIT_TAB = "edit-tab"
 HELP_TAB = "help-tab"
+SETTINGS_TAB = "settings-tab"
 THEME_NOTICE_SECONDS = 2.0
 THEME_CSS_SOURCE = ("runtime-theme.css", "ExpendiTUIApp.RUNTIME_THEME_CSS")
 
@@ -38,6 +46,9 @@ class ExpendiTUIApp(App[None]):
         Binding("o", "show_overview", "Overview"),
         Binding("e", "show_edit", "Edit"),
         Binding("h", "show_help", "Help"),
+        Binding("s", "show_settings", "Settings"),
+        Binding("pageup", "scroll_active_page_up", "Page Up", show=False),
+        Binding("pagedown", "scroll_active_page_down", "Page Down", show=False),
         Binding("t", "cycle_theme", "Theme"),
         Binding("escape", "back", "Back", priority=True),
     ]
@@ -78,6 +89,8 @@ class ExpendiTUIApp(App[None]):
         self.theme_notice: str | None = None
         self._theme_notice_token = 0
         self.theme_manager = ThemeManager()
+        self.visualization_manager = VisualizationConfigManager()
+        self.visualization_renderer = VisualizationRenderer()
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -88,6 +101,8 @@ class ExpendiTUIApp(App[None]):
                 yield EditPane()
             with TabPane("Help", id=HELP_TAB):
                 yield HelpPane()
+            with TabPane("Settings", id=SETTINGS_TAB):
+                yield SettingsPane()
         yield Static(id="app-message")
         yield Footer(show_command_palette=False)
 
@@ -132,8 +147,6 @@ class ExpendiTUIApp(App[None]):
         self.active_tab_id = next_tab_id
         if self.active_tab_id == OVERVIEW_TAB:
             self.query_one(OverviewPane).refresh_view()
-        elif self.active_tab_id == EDIT_TAB:
-            self.query_one(EditPane).focus_table()
         self.refresh_bindings()
 
     def load_state(self) -> str | None:
@@ -258,7 +271,16 @@ class ExpendiTUIApp(App[None]):
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         if (
-            action in {"reload", "show_overview", "show_help", "back"}
+            action
+            in {
+                "reload",
+                "show_overview",
+                "show_help",
+                "show_settings",
+                "back",
+                "scroll_active_page_up",
+                "scroll_active_page_down",
+            }
             and self.edit_mode_blocks_global_actions()
         ):
             return False
@@ -269,9 +291,13 @@ class ExpendiTUIApp(App[None]):
         if action == "show_edit":
             return self.active_tab_id != EDIT_TAB
         if action == "back":
-            return self.active_tab_id in {EDIT_TAB, HELP_TAB}
+            return self.active_tab_id in {EDIT_TAB, HELP_TAB, SETTINGS_TAB}
         if action == "show_help":
             return self.active_tab_id != HELP_TAB
+        if action == "show_settings":
+            return self.active_tab_id != SETTINGS_TAB
+        if action in {"scroll_active_page_up", "scroll_active_page_down"}:
+            return self.active_tab_id in {OVERVIEW_TAB, EDIT_TAB, HELP_TAB}
         return super().check_action(action, parameters)
 
     def edit_mode_blocks_global_actions(self) -> bool:
@@ -292,6 +318,7 @@ class ExpendiTUIApp(App[None]):
 
     def action_reload(self) -> None:
         self.load_state()
+        self.reload_visualizations()
         self.refresh_views(sync_edit=True)
 
     def action_show_edit(self) -> None:
@@ -302,6 +329,25 @@ class ExpendiTUIApp(App[None]):
 
     def action_show_help(self) -> None:
         self.switch_to_tab(HELP_TAB)
+
+    def action_show_settings(self) -> None:
+        self.switch_to_tab(SETTINGS_TAB)
+
+    def action_scroll_active_page_up(self) -> None:
+        if self.active_tab_id == OVERVIEW_TAB:
+            self.query_one(OverviewPane).page_up()
+        elif self.active_tab_id == EDIT_TAB:
+            self.query_one(EditPane).page_up()
+        elif self.active_tab_id == HELP_TAB:
+            self.query_one(HelpPane).scroll_page_up(animate=False)
+
+    def action_scroll_active_page_down(self) -> None:
+        if self.active_tab_id == OVERVIEW_TAB:
+            self.query_one(OverviewPane).page_down()
+        elif self.active_tab_id == EDIT_TAB:
+            self.query_one(EditPane).page_down()
+        elif self.active_tab_id == HELP_TAB:
+            self.query_one(HelpPane).scroll_page_down(animate=False)
 
     def action_cycle_theme(self) -> None:
         if self.theme_switch_blocks_global_actions():
@@ -336,6 +382,26 @@ class ExpendiTUIApp(App[None]):
             message.update(self.status_message)
             return
         message.update("")
+
+    @property
+    def visualization_config(self) -> VisualizationConfig:
+        return self.visualization_manager.config
+
+    def reload_visualizations(self) -> VisualizationConfig:
+        return self.visualization_manager.reload()
+
+    def render_overview_visualization(
+        self, available_width: int
+    ) -> VisualizationResult:
+        return self.visualization_renderer.render(
+            config=self.visualization_config,
+            income_entries=self.income,
+            expense_entries=self.expenses,
+            available_width=available_width,
+            style_for_slot=lambda slot_name: self.theme_rich_style(
+                slot_name, bold=True
+            ),
+        )
 
     def show_theme_notice(self) -> None:
         self.theme_notice = f"Theme: {self.active_theme.name}"
@@ -390,6 +456,10 @@ class ExpendiTUIApp(App[None]):
         help_pane = self.query_one_optional(HelpPane)
         if help_pane is not None:
             help_pane.apply_theme(theme)
+
+        settings_pane = self.query_one_optional(SettingsPane)
+        if settings_pane is not None:
+            settings_pane.apply_theme(theme)
 
         if announce:
             self.show_theme_notice()

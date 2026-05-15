@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from rich.console import Group
 from rich.text import Text
+from textual import events
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
@@ -22,9 +24,10 @@ def format_money(value) -> str:
 
 
 class OverviewPane(Vertical):
-    CSS = """
+    DEFAULT_CSS = """
     OverviewPane {
         height: 1fr;
+        min-height: 0;
     }
 
     #overview-title {
@@ -33,20 +36,45 @@ class OverviewPane(Vertical):
         text-style: bold;
     }
 
-    #overview-table {
-        height: 1fr;
+    .overview-section {
+        height: auto;
+        margin: 1 2 0 2;
+        padding: 0;
+        min-height: 3;
+    }
+
+    #overview-totals-section {
+        margin-top: 1;
+    }
+
+    #overview-visualization-section,
+    #overview-totals-section {
+        height: auto;
+    }
+
+    #overview-visualization {
+        height: auto;
+        padding: 1 2;
     }
 
     #overview-totals {
         height: auto;
-        padding: 1 2;
+        padding: 1 2 0 2;
+    }
+
+    #overview-table {
+        height: 1fr;
+        min-height: 0;
+        margin: 1 2;
     }
     """
 
     def compose(self) -> ComposeResult:
-        yield Static(APP_TITLE, id="overview-title")
+        with Vertical(id="overview-totals-section", classes="overview-section"):
+            yield Static(id="overview-totals")
+        with Vertical(id="overview-visualization-section", classes="overview-section"):
+            yield Static(id="overview-visualization")
         yield DataTable(id="overview-table")
-        yield Static(id="overview-totals")
 
     def on_mount(self) -> None:
         table = self.query_one("#overview-table", DataTable)
@@ -66,21 +94,41 @@ class OverviewPane(Vertical):
         self.refresh_view()
 
     def apply_theme(self, theme: AppTheme) -> None:
+        totals_background = theme.blend("warning", "surface", 0.18)
+        visualization_background = theme.blend("accent", "surface", 0.18)
         self.styles.background = theme.background
         self.styles.color = theme.foreground
-        self.query_one("#overview-title", Static).set_styles(
-            background=theme.surface,
-            color=theme.accent,
+        totals_section = self.query_one("#overview-totals-section", Vertical)
+        totals_section.set_styles(
+            background=totals_background,
+            color=theme.foreground,
         )
+        totals_section.styles.border = ("round", theme.warning)
+        visualization_section = self.query_one(
+            "#overview-visualization-section", Vertical
+        )
+        visualization_section.set_styles(
+            background=visualization_background,
+            color=theme.foreground,
+        )
+        visualization_section.styles.border = ("round", theme.accent)
         self.query_one("#overview-table", DataTable).set_styles(
             background=theme.surface,
             color=theme.foreground,
         )
+        self.query_one("#overview-visualization", Static).set_styles(
+            background=visualization_background,
+            color=theme.foreground,
+        )
         self.query_one("#overview-totals", Static).set_styles(
-            background=theme.background,
+            background=totals_background,
             color=theme.foreground,
         )
         self.refresh_view()
+
+    def on_resize(self, event: events.Resize) -> None:
+        del event
+        self._refresh_visualization()
 
     def refresh_view(self) -> None:
         table = self.query_one("#overview-table", DataTable)
@@ -113,6 +161,7 @@ class OverviewPane(Vertical):
         yearly_income = total_yearly(income)
         monthly_savings = savings_monthly(income, expenses)
         yearly_savings = savings_yearly(income, expenses)
+        self._refresh_visualization()
         totals = Text()
         totals.append(
             f"Monthly expenses: {format_money(monthly_expenses)}\n",
@@ -139,3 +188,20 @@ class OverviewPane(Vertical):
             style=self.app.theme_rich_style("accent", bold=True),
         )
         self.query_one("#overview-totals", Static).update(totals)
+
+    def page_up(self) -> None:
+        self.query_one("#overview-table", DataTable).action_page_up()
+
+    def page_down(self) -> None:
+        self.query_one("#overview-table", DataTable).action_page_down()
+
+    def _refresh_visualization(self) -> None:
+        widget = self.query_one("#overview-visualization", Static)
+        available_width = widget.size.width or self.size.width or self.app.size.width
+        result = self.app.render_overview_visualization(available_width)
+
+        lines = [*result.lines, *result.legend]
+        if not lines:
+            widget.update("")
+            return
+        widget.update(Group(*lines))

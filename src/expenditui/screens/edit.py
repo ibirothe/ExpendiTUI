@@ -359,6 +359,12 @@ class EditPane(Vertical):
             self.current_index = 0
         self.selection_by_dataset[self.active_dataset] = self.selected_name
 
+    def page_up(self) -> None:
+        self.query_one("#edit-table", DataTable).action_page_up()
+
+    def page_down(self) -> None:
+        self.query_one("#edit-table", DataTable).action_page_down()
+
     def move_selection(self, delta: int) -> None:
         if not self.entries:
             return
@@ -690,7 +696,10 @@ class EditPane(Vertical):
         dialog = self.query_one("#delete-confirm", ConfirmDialog)
 
         form.set_class(self.mode not in {EditMode.CREATE, EditMode.EDIT}, "hidden")
-        dialog.set_class(self.mode is not EditMode.CONFIRM_DELETE, "hidden")
+        dialog_hidden = self.mode is not EditMode.CONFIRM_DELETE
+        dialog.set_class(dialog_hidden, "hidden")
+        if dialog_hidden:
+            dialog.update("")
 
         dataset_name = (
             self.active_dataset.plural_name.title()
