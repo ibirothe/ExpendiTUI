@@ -39,14 +39,15 @@ class HelpPane(VerticalScroll):
 - o: open Overview
 - h: open Help
 - e: open Edit
-- j / k: move selection down or up in Edit
+- j / k: move the selected entry down or up in Edit
+- i: toggle between expense and income entries in Edit navigation
 - a / A: create an entry in Edit
 - e / E: edit the selected entry in Edit
 - d / D: delete the selected entry in Edit
 - tab / shift+tab: move between fields while creating or editing
 - enter: advance fields and submit from the final field while creating or editing
 - y / n: confirm or cancel delete in Edit
-- r: reload the JSON file
+- r: reload data from disk
 - esc: cancel the active Edit modal, or return to Overview from Edit or Help
 - q: quit
 """.strip()

@@ -1,16 +1,16 @@
-# Recurring Expenses TUI
+# ExpendiTUI
 
-Recurring Expenses TUI is a keyboard-first terminal application for Arch Linux that tracks recurring personal expenditures such as rent, subscriptions, insurance, and other base costs.
+ExpendiTUI is a keyboard-first terminal application for Arch Linux that tracks recurring expenses and income such as rent, subscriptions, salary, insurance, and other core financial flows.
 
 ## Features
 
-- Automatically load recurring expenses from JSON under the user config directory
-- View monthly and yearly base costs in a Textual Overview tab
-- Add, edit, and delete recurring expenses from a dedicated Edit tab
+- Automatically load expenses and income from JSON under the user config directory
+- View monthly and yearly expense, income, and savings totals in a Textual Overview tab
+- Add, edit, and delete expense and income entries from a dedicated Edit tab
 - Read keyboard shortcuts from the Help tab
 - Switch between tabs with visible tab navigation and keyboard shortcuts
 - Load and switch color themes at runtime with persisted theme selection
-- Validate expense names, amounts, and allowed frequencies before saving
+- Validate entry names, amounts, tags, and allowed frequencies before saving
 - Reload data from disk without restarting the app
 
 ## Requirements
@@ -41,7 +41,7 @@ source .venv/bin/activate
 uv pip install -e ".[dev]"
 ```
 
-Activation alone is not enough. The `recurring-expenses-tui` command is only
+Activation alone is not enough. The `expenditui` command is only
 added to the virtual environment after `pip install -e ".[dev]"` or
 `uv pip install -e ".[dev]"` succeeds.
 
@@ -50,29 +50,29 @@ added to the virtual environment after `pip install -e ".[dev]"` or
 Run the application from the activated virtual environment:
 
 ```bash
-recurring-expenses-tui
+expenditui
 ```
 
 If you want to verify the package import path directly, the app can also be
 started with:
 
 ```bash
-python -m recurring_expenses_tui
+python -m expenditui
 ```
 
-If `python -m recurring_expenses_tui` works but `recurring-expenses-tui` does
+If `python -m expenditui` works but `expenditui` does
 not, your virtual environment activation or install step is wrong.
 
 ## Troubleshooting
 
-If you see `bash: command not found: recurring-expenses-tui`, check these first:
+If you see `bash: command not found: expenditui`, check these first:
 
 - Make sure you are in the directory that contains `pyproject.toml` before you install.
 - Make sure the environment is activated before you run the command.
 - Verify that the console script exists on your `PATH`:
 
 ```bash
-command -v recurring-expenses-tui
+command -v expenditui
 ```
 
 If that command prints nothing, recreate the environment and reinstall:
@@ -87,19 +87,25 @@ pip install -e ".[dev]"
 Then run:
 
 ```bash
-recurring-expenses-tui
+expenditui
 ```
 
 The app stores its data in:
 
 ```text
-~/.config/recurring-expenses-tui/expenses.json
+~/.config/expenditui/expenses.json
+```
+
+Income is stored in:
+
+```text
+~/.config/expenditui/income.json
 ```
 
 Optional theme configuration is loaded from:
 
 ```text
-~/.config/recurring-expenses-tui/themes.json
+~/.config/expenditui/themes.json
 ```
 
 On startup, the app automatically loads this file. If the file does not exist,
@@ -110,7 +116,7 @@ the app creates it with an empty JSON object:
 ```
 
 If the file contains invalid JSON, the app shows a clear error in the TUI and
-continues with an empty in-memory expense list where possible.
+continues with an empty in-memory entry list where possible.
 
 If `themes.json` is missing, malformed, empty, or contains only invalid theme
 rows, the app falls back to built-in themes and remains usable.
@@ -119,9 +125,9 @@ Built-in themes include `Dreamy`, `Sandstone`, and `Nord`.
 
 ## Navigation
 
-The TUI has three visible tabs:
+ExpendiTUI has three visible tabs:
 
-- `Overview` shows all saved expenses and monthly/yearly totals.
+- `Overview` shows all saved expense and income entries with monthly and yearly totals and savings.
 - `Edit` uses a modal workflow for create, edit, and delete operations.
 - `Help` lists the available keyboard shortcuts.
 
@@ -137,6 +143,7 @@ is highlighted by Textual's tab widget.
 - `h` open the Help tab
 - `e` open the Edit tab
 - `j` / `k` move the selected Edit row down or up
+- `i` toggle between expenses and income while in Edit navigation mode
 - `a` / `A` open create mode in Edit
 - `e` / `E` open edit mode for the selected row in Edit
 - `d` / `D` open delete confirmation for the selected row in Edit
@@ -147,13 +154,14 @@ is highlighted by Textual's tab widget.
 
 ## JSON Format
 
-The stored file uses this shape:
+Each data file uses this shape:
 
 ```json
 {
   "rent": {
     "amount": 1200.0,
-    "frequency": "monthly"
+    "frequency": "monthly",
+    "tags": ["Housing"]
   },
   "netflix": {
     "amount": 12.5,
@@ -166,8 +174,9 @@ The stored file uses this shape:
 }
 ```
 
-Amounts must be non-negative and use at most two decimal places. Expense names
-must be non-empty strings.
+Amounts must be non-negative and use at most two decimal places. Entry names
+must be non-empty strings. Tags are optional, stored as string arrays, limited
+to 10 values per entry, and each tag must be non-empty after trimming.
 
 Supported frequencies are:
 
@@ -191,9 +200,14 @@ Monthly equivalents are calculated as:
 
 The yearly total is the monthly total multiplied by 12.
 
+Savings are calculated from recurring equivalents:
+
+- `monthly savings = monthly income - monthly expenses`
+- `yearly savings = yearly income - yearly expenses`
+
 ## Theme Format
 
-Themes use a JSON array of arrays in `~/.config/recurring-expenses-tui/themes.json`.
+Themes use a JSON array of arrays in `~/.config/expenditui/themes.json`.
 Each theme row must contain a name followed by eight hex colors in this order:
 
 1. `background`
@@ -226,7 +240,7 @@ cd ExpendiTUI
 python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
-recurring-expenses-tui
+expenditui
 ```
 
 ## Development

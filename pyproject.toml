@@ -3,9 +3,9 @@ requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "recurring-expenses-tui"
+name = "expenditui"
 version = "0.1.0"
-description = "A Textual TUI for tracking recurring personal expenses."
+description = "ExpendiTUI is a Textual TUI for tracking recurring expenses and income."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -22,7 +22,7 @@ dev = [
 ]
 
 [project.scripts]
-recurring-expenses-tui = "recurring_expenses_tui.app:main"
+expenditui = "expenditui.app:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

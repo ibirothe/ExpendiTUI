@@ -6,25 +6,32 @@ from textual.binding import Binding
 from textual.widgets import Footer, Header, Static, TabbedContent, TabPane
 
 from .constants import APP_TITLE
-from .models import ExpenseEntry
+from .models import EntryType, FinancialEntry
 from .screens.edit import EditPane
 from .screens.help import HelpPane
 from .screens.overview import OverviewPane
-from .storage import StorageError, get_expenses_path, load_expenses, save_expenses
+from .storage import (
+    StorageError,
+    get_dataset_path,
+    get_expenses_path,
+    get_income_path,
+    load_entries,
+    save_entries,
+)
 from .theme import AppTheme, ThemeManager
 
 OVERVIEW_TAB = "overview-tab"
 EDIT_TAB = "edit-tab"
 HELP_TAB = "help-tab"
 THEME_NOTICE_SECONDS = 2.0
-THEME_CSS_SOURCE = ("runtime-theme.css", "RecurringExpensesApp.RUNTIME_THEME_CSS")
+THEME_CSS_SOURCE = ("runtime-theme.css", "ExpendiTUIApp.RUNTIME_THEME_CSS")
 
 
-class RecurringExpensesApp(App[None]):
+class ExpendiTUIApp(App[None]):
     TITLE = APP_TITLE
     BINDINGS = [
         Binding("q", "quit", "Quit", priority=True),
-        Binding("r", "reload", "Reload JSON", priority=True),
+        Binding("r", "reload", "Reload Data", priority=True),
         Binding("o", "show_overview", "Overview"),
         Binding("e", "show_edit", "Edit"),
         Binding("h", "show_help", "Help"),
@@ -58,7 +65,8 @@ class RecurringExpensesApp(App[None]):
 
     def __init__(self) -> None:
         super().__init__()
-        self.expenses: dict[str, ExpenseEntry] = {}
+        self.expenses: dict[str, FinancialEntry] = {}
+        self.income: dict[str, FinancialEntry] = {}
         self.last_error: str | None = None
         self.status_message: str | None = None
         self.status_message_kind = "success"
@@ -125,28 +133,57 @@ class RecurringExpensesApp(App[None]):
         self.refresh_bindings()
 
     def load_state(self) -> str | None:
+        diagnostics: list[str] = []
+        loaded_any = False
+        for entry_type in EntryType:
+            try:
+                result = load_entries(entry_type)
+                self.set_entries(entry_type, result.entries)
+                loaded_any = True
+                if result.diagnostics:
+                    count = len(result.diagnostics)
+                    noun = "entry" if count == 1 else "entries"
+                    diagnostics.append(
+                        f"{entry_type.display_name}: skipped {count} invalid {noun} from {get_dataset_path(entry_type)}."
+                    )
+            except StorageError as exc:
+                self.set_entries(entry_type, {})
+                diagnostics.append(str(exc))
+
+        self.last_error = " | ".join(diagnostics) if diagnostics else None
+        if loaded_any:
+            self.status_message = "Loaded expense and income entries."
+            self.status_message_kind = "success"
+        else:
+            self.status_message = None
+        return self.last_error
+
+    def save_state(
+        self, entry_type: EntryType, data: dict[str, FinancialEntry]
+    ) -> str | None:
         try:
-            self.expenses = load_expenses()
+            save_entries(entry_type, data)
+            self.set_entries(entry_type, load_entries(entry_type).entries)
             self.last_error = None
-            self.status_message = f"Loaded expenses from {get_expenses_path()}."
+            self.status_message = (
+                f"Saved {entry_type.plural_name} to {get_dataset_path(entry_type)}."
+            )
             self.status_message_kind = "success"
         except StorageError as exc:
-            self.expenses = {}
             self.last_error = str(exc)
             self.status_message = None
         return self.last_error
 
-    def save_state(self, data: dict[str, ExpenseEntry]) -> str | None:
-        try:
-            save_expenses(data)
-            self.expenses = load_expenses()
-            self.last_error = None
-            self.status_message = f"Saved expenses to {get_expenses_path()}."
-            self.status_message_kind = "success"
-        except StorageError as exc:
-            self.last_error = str(exc)
-            self.status_message = None
-        return self.last_error
+    def get_entries(self, entry_type: EntryType) -> dict[str, FinancialEntry]:
+        return self.expenses if entry_type is EntryType.EXPENSE else self.income
+
+    def set_entries(
+        self, entry_type: EntryType, entries: dict[str, FinancialEntry]
+    ) -> None:
+        if entry_type is EntryType.EXPENSE:
+            self.expenses = entries
+        else:
+            self.income = entries
 
     def refresh_views(self, *, sync_edit: bool = False) -> None:
         self.query_one(OverviewPane).refresh_view()
@@ -506,4 +543,4 @@ class RecurringExpensesApp(App[None]):
 
 
 def main() -> None:
-    RecurringExpensesApp().run()
+    ExpendiTUIApp().run()
