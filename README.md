@@ -6,6 +6,7 @@ ExpendiTUI is a keyboard-first terminal application for Arch Linux that tracks r
 
 - Automatically load expenses and income from JSON under the user config directory
 - View monthly and yearly expense, income, and savings totals in a Textual Overview tab
+- Render a compact configurable ASCII or Unicode financial visualization in Overview
 - Add, edit, and delete expense and income entries from a dedicated Edit tab
 - Read keyboard shortcuts from the Help tab
 - Switch between tabs with visible tab navigation and keyboard shortcuts
@@ -108,6 +109,12 @@ Optional theme configuration is loaded from:
 ~/.config/expenditui/themes.json
 ```
 
+Optional overview visualization configuration is loaded from:
+
+```text
+~/.config/expenditui/visualizations.json
+```
+
 On startup, the app automatically loads this file. If the file does not exist,
 the app creates it with an empty JSON object:
 
@@ -122,6 +129,25 @@ If `themes.json` is missing, malformed, empty, or contains only invalid theme
 rows, the app falls back to built-in themes and remains usable.
 
 Built-in themes include `Dreamy`, `Sandstone`, and `Nord`.
+
+If `visualizations.json` is missing, malformed, or contains unsupported values,
+the app falls back to a safe default `income_vs_expense` bar comparison and
+remains usable.
+
+Example:
+
+```json
+{
+  "overview": {
+    "enabled": true,
+    "type": "income_vs_expense",
+    "maxWidth": 20,
+    "incomeSymbol": "█",
+    "expenseSymbol": "█",
+    "showLabels": true
+  }
+}
+```
 
 ## Navigation
 

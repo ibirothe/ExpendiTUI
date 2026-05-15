@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from rich.console import Group
 from rich.text import Text
+from textual import events
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
@@ -37,6 +39,11 @@ class OverviewPane(Vertical):
         height: 1fr;
     }
 
+    #overview-visualization {
+        height: auto;
+        padding: 1 2 0 2;
+    }
+
     #overview-totals {
         height: auto;
         padding: 1 2;
@@ -46,6 +53,7 @@ class OverviewPane(Vertical):
     def compose(self) -> ComposeResult:
         yield Static(APP_TITLE, id="overview-title")
         yield DataTable(id="overview-table")
+        yield Static(id="overview-visualization")
         yield Static(id="overview-totals")
 
     def on_mount(self) -> None:
@@ -76,11 +84,19 @@ class OverviewPane(Vertical):
             background=theme.surface,
             color=theme.foreground,
         )
+        self.query_one("#overview-visualization", Static).set_styles(
+            background=theme.surface,
+            color=theme.foreground,
+        )
         self.query_one("#overview-totals", Static).set_styles(
             background=theme.background,
             color=theme.foreground,
         )
         self.refresh_view()
+
+    def on_resize(self, event: events.Resize) -> None:
+        del event
+        self._refresh_visualization()
 
     def refresh_view(self) -> None:
         table = self.query_one("#overview-table", DataTable)
@@ -113,6 +129,7 @@ class OverviewPane(Vertical):
         yearly_income = total_yearly(income)
         monthly_savings = savings_monthly(income, expenses)
         yearly_savings = savings_yearly(income, expenses)
+        self._refresh_visualization()
         totals = Text()
         totals.append(
             f"Monthly expenses: {format_money(monthly_expenses)}\n",
@@ -139,3 +156,14 @@ class OverviewPane(Vertical):
             style=self.app.theme_rich_style("accent", bold=True),
         )
         self.query_one("#overview-totals", Static).update(totals)
+
+    def _refresh_visualization(self) -> None:
+        widget = self.query_one("#overview-visualization", Static)
+        available_width = widget.size.width or self.size.width or self.app.size.width
+        result = self.app.render_overview_visualization(available_width)
+
+        lines = [*result.lines, *result.legend]
+        if not lines:
+            widget.update("")
+            return
+        widget.update(Group(*lines))

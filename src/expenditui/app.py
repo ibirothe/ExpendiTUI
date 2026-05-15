@@ -22,6 +22,12 @@ from .storage import (
 )
 from .tags import TagRegistry
 from .theme import AppTheme, ThemeManager
+from .visualization import (
+    VisualizationConfig,
+    VisualizationConfigManager,
+    VisualizationRenderer,
+    VisualizationResult,
+)
 
 OVERVIEW_TAB = "overview-tab"
 EDIT_TAB = "edit-tab"
@@ -78,6 +84,8 @@ class ExpendiTUIApp(App[None]):
         self.theme_notice: str | None = None
         self._theme_notice_token = 0
         self.theme_manager = ThemeManager()
+        self.visualization_manager = VisualizationConfigManager()
+        self.visualization_renderer = VisualizationRenderer()
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -292,6 +300,7 @@ class ExpendiTUIApp(App[None]):
 
     def action_reload(self) -> None:
         self.load_state()
+        self.reload_visualizations()
         self.refresh_views(sync_edit=True)
 
     def action_show_edit(self) -> None:
@@ -336,6 +345,26 @@ class ExpendiTUIApp(App[None]):
             message.update(self.status_message)
             return
         message.update("")
+
+    @property
+    def visualization_config(self) -> VisualizationConfig:
+        return self.visualization_manager.config
+
+    def reload_visualizations(self) -> VisualizationConfig:
+        return self.visualization_manager.reload()
+
+    def render_overview_visualization(
+        self, available_width: int
+    ) -> VisualizationResult:
+        return self.visualization_renderer.render(
+            config=self.visualization_config,
+            income_entries=self.income,
+            expense_entries=self.expenses,
+            available_width=available_width,
+            style_for_slot=lambda slot_name: self.theme_rich_style(
+                slot_name, bold=True
+            ),
+        )
 
     def show_theme_notice(self) -> None:
         self.theme_notice = f"Theme: {self.active_theme.name}"
