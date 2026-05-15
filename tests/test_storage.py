@@ -10,9 +10,12 @@ from expenditui.storage import (
     load_entries,
     load_expenses,
     load_income,
+    load_tag_registry,
     save_expenses,
     save_income,
+    save_tag_registry,
 )
+from expenditui.tags import TagRegistry
 
 
 def test_load_missing_file_creates_empty_json(tmp_path, monkeypatch) -> None:
@@ -184,6 +187,7 @@ def test_app_load_state_handles_invalid_json_without_crashing(
 ) -> None:
     expenses_path = tmp_path / "expenses.json"
     income_path = tmp_path / "income.json"
+    tags_path = tmp_path / "tags.json"
     expenses_path.write_text("{ invalid json", encoding="utf-8")
     income_path.write_text(
         json.dumps({"salary": {"amount": 3200, "frequency": "monthly"}}),
@@ -191,6 +195,7 @@ def test_app_load_state_handles_invalid_json_without_crashing(
     )
     monkeypatch.setattr("expenditui.storage.get_expenses_path", lambda: expenses_path)
     monkeypatch.setattr("expenditui.storage.get_income_path", lambda: income_path)
+    monkeypatch.setattr("expenditui.storage.get_tags_path", lambda: tags_path)
     monkeypatch.setattr("expenditui.app.get_expenses_path", lambda: expenses_path)
     monkeypatch.setattr("expenditui.app.get_income_path", lambda: income_path)
 
@@ -203,3 +208,95 @@ def test_app_load_state_handles_invalid_json_without_crashing(
     assert app.expenses == {}
     assert list(app.income) == ["salary"]
     assert app.last_error == error
+
+
+def test_missing_tags_file_recovers_with_defaults(tmp_path, monkeypatch) -> None:
+    tags_path = tmp_path / "tags.json"
+    monkeypatch.setattr("expenditui.storage.get_tags_path", lambda: tags_path)
+
+    result = load_tag_registry()
+
+    assert result.registry.to_list() == ["bank", "cash", "paypal"]
+    assert result.needs_save is True
+    assert result.diagnostics == []
+
+
+def test_malformed_tags_file_recovers_without_crashing(tmp_path, monkeypatch) -> None:
+    tags_path = tmp_path / "tags.json"
+    tags_path.write_text("{ invalid json", encoding="utf-8")
+    monkeypatch.setattr("expenditui.storage.get_tags_path", lambda: tags_path)
+
+    result = load_tag_registry()
+
+    assert result.registry.to_list() == ["bank", "cash", "paypal"]
+    assert result.needs_save is True
+    assert "Invalid JSON" in result.diagnostics[0]
+
+
+def test_invalid_tags_are_skipped_and_duplicates_collapse(tmp_path, monkeypatch) -> None:
+    tags_path = tmp_path / "tags.json"
+    tags_path.write_text(
+        json.dumps(["Food", "food", "", 5, "Travel"], indent=2),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("expenditui.storage.get_tags_path", lambda: tags_path)
+
+    result = load_tag_registry()
+
+    assert "Food" in result.registry
+    assert "Travel" in result.registry
+    assert result.registry.canonicalize("food") == "Food"
+    assert len(result.diagnostics) == 2
+    assert result.needs_save is True
+
+
+def test_save_tag_registry_writes_json_array_atomically(tmp_path, monkeypatch) -> None:
+    tags_path = tmp_path / "tags.json"
+    monkeypatch.setattr("expenditui.storage.get_tags_path", lambda: tags_path)
+
+    save_tag_registry(TagRegistry(["Travel", "Food"]))
+
+    saved_text = tags_path.read_text(encoding="utf-8")
+    assert saved_text.endswith("\n")
+    assert json.loads(saved_text) == ["Food", "Travel"]
+
+
+def test_app_load_state_reconciles_entry_tags_into_registry(tmp_path, monkeypatch) -> None:
+    expenses_path = tmp_path / "expenses.json"
+    income_path = tmp_path / "income.json"
+    tags_path = tmp_path / "tags.json"
+    expenses_path.write_text(
+        json.dumps(
+            {"rent": {"amount": 1200, "frequency": "monthly", "tags": ["Housing"]}},
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    income_path.write_text(
+        json.dumps(
+            {"salary": {"amount": 3200, "frequency": "monthly", "tags": ["Work"]}},
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    tags_path.write_text(json.dumps(["cash"], indent=2), encoding="utf-8")
+    monkeypatch.setattr("expenditui.storage.get_expenses_path", lambda: expenses_path)
+    monkeypatch.setattr("expenditui.storage.get_income_path", lambda: income_path)
+    monkeypatch.setattr("expenditui.storage.get_tags_path", lambda: tags_path)
+    monkeypatch.setattr("expenditui.app.get_expenses_path", lambda: expenses_path)
+    monkeypatch.setattr("expenditui.app.get_income_path", lambda: income_path)
+
+    app = ExpendiTUIApp()
+
+    error = app.load_state()
+
+    assert error is None
+    assert app.get_tag_registry().canonicalize("housing") == "Housing"
+    assert app.get_tag_registry().canonicalize("work") == "Work"
+    assert json.loads(tags_path.read_text(encoding="utf-8")) == [
+        "bank",
+        "cash",
+        "Housing",
+        "paypal",
+        "Work",
+    ]

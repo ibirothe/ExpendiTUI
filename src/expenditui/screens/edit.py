@@ -10,8 +10,9 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widgets import DataTable, Input, Label, Static
 
-from ..constants import DEFAULT_FREQUENCY
+from ..constants import DEFAULT_FREQUENCY, MAX_TAGS
 from ..models import EntryType, FinancialEntry
+from ..tags import normalize_tag_key
 from ..theme import AppTheme
 
 
@@ -20,7 +21,7 @@ class DraftEntry:
     name: str
     amount: str
     frequency: str
-    tags: str
+    tags: list[str]
 
 
 class EditMode(str, Enum):
@@ -35,6 +36,13 @@ class ConfirmDialog(Static, can_focus=True):
 
 
 class EntryForm(Vertical):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._attached_tags: list[str] = []
+        self._suggestions: list[str] = []
+        self._highlighted_suggestion_index: int | None = None
+        self._empty_suggestion_message: str | None = None
+
     def compose(self) -> ComposeResult:
         yield Label("Name", classes="field-label")
         yield Input(placeholder="Entry name", id="name-input")
@@ -43,20 +51,24 @@ class EntryForm(Vertical):
         yield Label("Frequency", classes="field-label")
         yield Input(placeholder=DEFAULT_FREQUENCY, id="frequency-input")
         yield Label("Tags", classes="field-label")
-        yield Input(placeholder="Optional, comma-separated", id="tags-input")
+        yield Static(id="selected-tags")
+        yield Input(placeholder="Type to search or create", id="tags-input")
+        yield Static(id="tag-suggestions", classes="hidden")
 
     def set_draft(self, draft: DraftEntry) -> None:
         self.query_one("#name-input", Input).value = draft.name
         self.query_one("#amount-input", Input).value = draft.amount
         self.query_one("#frequency-input", Input).value = draft.frequency
-        self.query_one("#tags-input", Input).value = draft.tags
+        self.set_tags(draft.tags)
+        self.clear_tag_input()
+        self.hide_suggestions()
 
     def get_draft(self) -> DraftEntry:
         return DraftEntry(
             name=self.query_one("#name-input", Input).value,
             amount=self.query_one("#amount-input", Input).value,
             frequency=self.query_one("#frequency-input", Input).value,
-            tags=self.query_one("#tags-input", Input).value,
+            tags=self.get_tags(),
         )
 
     def focus_first_field(self) -> None:
@@ -70,6 +82,50 @@ class EntryForm(Vertical):
 
     def is_final_field(self, field: Input) -> bool:
         return field.id == "tags-input"
+
+    def get_tags(self) -> list[str]:
+        return list(self._attached_tags)
+
+    def set_tags(self, tags: list[str]) -> None:
+        self._attached_tags = list(tags)
+        self._render_selected_tags()
+
+    def pop_last_tag(self) -> str | None:
+        if not self._attached_tags:
+            return None
+        removed = self._attached_tags.pop()
+        self._render_selected_tags()
+        return removed
+
+    def get_tag_input(self) -> str:
+        return self.query_one("#tags-input", Input).value
+
+    def clear_tag_input(self) -> None:
+        self.query_one("#tags-input", Input).value = ""
+
+    def render_suggestions(
+        self,
+        suggestions: list[str],
+        highlighted_index: int | None,
+        *,
+        empty_message: str | None = None,
+    ) -> None:
+        self._suggestions = list(suggestions)
+        self._highlighted_suggestion_index = highlighted_index
+        self._empty_suggestion_message = empty_message
+        self._render_suggestions()
+
+    def hide_suggestions(self) -> None:
+        self._suggestions = []
+        self._highlighted_suggestion_index = None
+        self._empty_suggestion_message = None
+        widget = self.query_one("#tag-suggestions", Static)
+        widget.set_class(True, "hidden")
+        widget.update("")
+
+    def refresh_tag_views(self) -> None:
+        self._render_selected_tags()
+        self._render_suggestions()
 
     def _focus_relative_field(self, direction: int) -> None:
         fields = [
@@ -88,6 +144,60 @@ class EntryForm(Vertical):
 
         target_index = max(0, min(current_index + direction, len(fields) - 1))
         fields[target_index].focus()
+
+    def _render_selected_tags(self) -> None:
+        widget = self.query_one("#selected-tags", Static)
+        if not self._attached_tags:
+            widget.update(Text("No tags selected.", style=self.app.theme_rich_style("muted")))
+            return
+
+        text = Text()
+        tag_style = self.app.theme_rich_style(
+            "background",
+            background_slot="accent",
+            bold=True,
+        )
+        for index, tag in enumerate(self._attached_tags):
+            if index:
+                text.append(" ")
+            text.append(f"[{tag}]", style=tag_style)
+        widget.update(text)
+
+    def _render_suggestions(self) -> None:
+        widget = self.query_one("#tag-suggestions", Static)
+        if not self._suggestions and self._empty_suggestion_message is None:
+            widget.set_class(True, "hidden")
+            widget.update("")
+            return
+
+        widget.set_class(False, "hidden")
+        if not self._suggestions:
+            widget.update(
+                Text(
+                    self._empty_suggestion_message or "",
+                    style=self.app.theme_rich_style("muted"),
+                )
+            )
+            return
+
+        text = Text()
+        for index, suggestion in enumerate(self._suggestions):
+            if index:
+                text.append("\n")
+            is_highlighted = index == self._highlighted_suggestion_index
+            line_style = (
+                self.app.theme_rich_style(
+                    "background",
+                    background_slot="accent",
+                    bold=True,
+                )
+                if is_highlighted
+                else self.app.theme_rich_style("foreground")
+            )
+            prefix = "> " if is_highlighted else "  "
+            text.append(prefix, style=line_style)
+            text.append(suggestion, style=line_style)
+        widget.update(text)
 
 
 class EditPane(Vertical):
@@ -121,6 +231,18 @@ class EditPane(Vertical):
         margin-top: 1;
     }
 
+    #selected-tags {
+        min-height: 2;
+        padding: 0 1;
+        border: round $surface;
+    }
+
+    #tag-suggestions {
+        min-height: 2;
+        padding: 0 1;
+        border: round $surface;
+    }
+
     #delete-confirm {
         margin: 0 1 1 1;
         padding: 1 2;
@@ -150,6 +272,8 @@ class EditPane(Vertical):
         self.modal_origin_name: str | None = None
         self.modal_target_index: int | None = None
         self.message_kind = "foreground"
+        self.tag_suggestions: list[str] = []
+        self.highlighted_tag_index: int | None = None
 
     def compose(self) -> ComposeResult:
         yield Static(id="edit-title")
@@ -189,7 +313,7 @@ class EditPane(Vertical):
                 name=name,
                 amount=f"{entry.amount:.2f}",
                 frequency=entry.frequency.value,
-                tags=", ".join(entry.tags),
+                tags=list(entry.tags),
             )
             for name, entry in self.app.get_entries(self.active_dataset).items()
         ]
@@ -198,6 +322,8 @@ class EditPane(Vertical):
         self.mode = EditMode.NAVIGATION
         self.modal_origin_name = self.selected_name
         self.modal_target_index = None
+        self.tag_suggestions = []
+        self.highlighted_tag_index = None
         if self.is_mounted:
             self.refresh_table()
             self._update_mode_ui()
@@ -265,7 +391,7 @@ class EditPane(Vertical):
         self.modal_target_index = self.current_index + 1 if self.entries else 0
         self.mode = EditMode.CREATE
         self._show_form(
-            DraftEntry(name="", amount="", frequency=DEFAULT_FREQUENCY, tags="")
+            DraftEntry(name="", amount="", frequency=DEFAULT_FREQUENCY, tags=[])
         )
         self.set_message("")
 
@@ -309,6 +435,8 @@ class EditPane(Vertical):
         else:
             self.current_index = 0
         self.modal_target_index = None
+        self.tag_suggestions = []
+        self.highlighted_tag_index = None
         self._update_mode_ui()
         self.refresh_table()
         self.focus_table()
@@ -389,11 +517,6 @@ class EditPane(Vertical):
             name = draft.name.strip()
             frequency = draft.frequency.strip().lower()
             amount = draft.amount.strip()
-            tags = (
-                [segment.strip() for segment in draft.tags.split(",")]
-                if draft.tags.strip()
-                else []
-            )
             if not name:
                 errors.append(f"Row {index}: name is required.")
                 continue
@@ -404,7 +527,9 @@ class EditPane(Vertical):
 
             try:
                 validated[name] = FinancialEntry(
-                    amount=amount, frequency=frequency, tags=tags
+                    amount=amount,
+                    frequency=frequency,
+                    tags=draft.tags,
                 )
             except ValidationError as exc:
                 for issue in exc.errors():
@@ -433,10 +558,19 @@ class EditPane(Vertical):
         if self.mode is EditMode.NAVIGATION:
             self._set_current_index_from_event(event.row_key)
 
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if self.mode not in {EditMode.CREATE, EditMode.EDIT}:
+            return
+        if event.input.id == "tags-input":
+            self._refresh_tag_suggestions()
+
     def on_input_submitted(self, event: Input.Submitted) -> None:
         if self.mode not in {EditMode.CREATE, EditMode.EDIT}:
             return
         event.stop()
+        if event.input.id == "tags-input":
+            self._handle_tag_input_submit()
+            return
         if self.query_one(EntryForm).is_final_field(event.input):
             self.submit_form()
         else:
@@ -451,6 +585,37 @@ class EditPane(Vertical):
             self._handle_confirmation_key(event)
             return
 
+        if event.key == "escape" and self._tag_suggestions_open() and self._tags_input_has_focus():
+            event.stop()
+            event.prevent_default()
+            self._hide_tag_suggestions()
+            return
+
+        if event.key == "up" and self._tags_input_has_focus() and self.tag_suggestions:
+            event.stop()
+            event.prevent_default()
+            self._move_tag_highlight(-1)
+            return
+
+        if event.key == "down" and self._tags_input_has_focus() and self.tag_suggestions:
+            event.stop()
+            event.prevent_default()
+            self._move_tag_highlight(1)
+            return
+
+        if (
+            event.key == "backspace"
+            and self._tags_input_has_focus()
+            and not self.query_one(EntryForm).get_tag_input()
+        ):
+            removed = self.query_one(EntryForm).pop_last_tag()
+            if removed is not None:
+                event.stop()
+                event.prevent_default()
+                self._refresh_tag_suggestions()
+                self.set_message(f"Removed tag: {removed}.", kind="muted")
+            return
+
         if event.key == "escape":
             event.stop()
             event.prevent_default()
@@ -460,6 +625,8 @@ class EditPane(Vertical):
         if event.key == "tab":
             event.stop()
             event.prevent_default()
+            if self._tags_input_has_focus() and self._apply_highlighted_tag():
+                return
             self.query_one(EntryForm).focus_next_field()
             return
 
@@ -511,6 +678,8 @@ class EditPane(Vertical):
 
     def _show_form(self, draft: DraftEntry) -> None:
         form = self.query_one(EntryForm)
+        self.tag_suggestions = []
+        self.highlighted_tag_index = None
         form.set_draft(draft)
         self._update_mode_ui()
         form.focus_first_field()
@@ -573,12 +742,13 @@ class EditPane(Vertical):
                 tag = "DELETE"
                 accent_slot = "error"
 
+        tags_display = ", ".join(entry.tags)
         if tag is None:
             return (
                 entry.name or "<blank>",
                 entry.amount,
                 entry.frequency,
-                entry.tags,
+                tags_display,
             )
 
         row_style = self.app.theme_rich_style(
@@ -592,7 +762,7 @@ class EditPane(Vertical):
         )
         amount = Text(entry.amount, style=row_style)
         frequency = Text(entry.frequency, style=row_style)
-        tags = Text(entry.tags, style=row_style)
+        tags = Text(tags_display, style=row_style)
         return name, amount, frequency, tags
 
     def apply_theme(self, theme: AppTheme) -> None:
@@ -610,6 +780,14 @@ class EditPane(Vertical):
         form.styles.background = theme.surface
         form.styles.color = theme.foreground
         form.styles.border_left = ("solid", theme.muted)
+        form.query_one("#selected-tags", Static).set_styles(
+            background=theme.background,
+            color=theme.foreground,
+        )
+        form.query_one("#tag-suggestions", Static).set_styles(
+            background=theme.background,
+            color=theme.foreground,
+        )
 
         dialog = self.query_one("#delete-confirm", ConfirmDialog)
         dialog.styles.background = theme.surface
@@ -626,6 +804,7 @@ class EditPane(Vertical):
     def refresh_theme_state(self) -> None:
         if self.entries:
             self.refresh_table()
+        self.query_one(EntryForm).refresh_tag_views()
         self.query_one("#edit-message", Static).styles.color = self._message_color(
             self.message_kind
         )
@@ -643,3 +822,138 @@ class EditPane(Vertical):
         refresh_bindings = getattr(self.app, "refresh_bindings", None)
         if callable(refresh_bindings):
             refresh_bindings()
+
+    def _refresh_tag_suggestions(self) -> None:
+        form = self.query_one(EntryForm)
+        previous_tag = None
+        if (
+            self.highlighted_tag_index is not None
+            and 0 <= self.highlighted_tag_index < len(self.tag_suggestions)
+        ):
+            previous_tag = self.tag_suggestions[self.highlighted_tag_index]
+
+        query = form.get_tag_input().strip()
+        if not query:
+            self.tag_suggestions = []
+            self.highlighted_tag_index = None
+            form.hide_suggestions()
+            return
+
+        suggestions = self.app.get_tag_registry().suggestions(
+            query,
+            exclude=form.get_tags(),
+        )
+        self.tag_suggestions = suggestions
+        if suggestions:
+            if previous_tag in suggestions:
+                self.highlighted_tag_index = suggestions.index(previous_tag)
+            elif self.highlighted_tag_index is None:
+                self.highlighted_tag_index = 0
+            else:
+                self.highlighted_tag_index = min(
+                    self.highlighted_tag_index,
+                    len(suggestions) - 1,
+                )
+            form.render_suggestions(
+                suggestions,
+                self.highlighted_tag_index,
+            )
+            return
+
+        self.highlighted_tag_index = None
+        form.render_suggestions(
+            [],
+            None,
+            empty_message="No matching tags. Press Enter to create.",
+        )
+
+    def _move_tag_highlight(self, delta: int) -> None:
+        if not self.tag_suggestions:
+            return
+        current_index = self.highlighted_tag_index or 0
+        self.highlighted_tag_index = max(
+            0,
+            min(current_index + delta, len(self.tag_suggestions) - 1),
+        )
+        self.query_one(EntryForm).render_suggestions(
+            self.tag_suggestions,
+            self.highlighted_tag_index,
+        )
+
+    def _apply_highlighted_tag(self) -> bool:
+        if (
+            self.highlighted_tag_index is None
+            or not 0 <= self.highlighted_tag_index < len(self.tag_suggestions)
+        ):
+            return False
+        return self._add_tag_to_form(self.tag_suggestions[self.highlighted_tag_index])
+
+    def _handle_tag_input_submit(self) -> None:
+        if self._apply_highlighted_tag():
+            return
+
+        form = self.query_one(EntryForm)
+        raw_tag = form.get_tag_input().strip()
+        if not raw_tag:
+            self.submit_form()
+            return
+
+        registry = self.app.get_tag_registry()
+        if raw_tag in registry:
+            self._add_tag_to_form(registry.canonicalize(raw_tag))
+            return
+        if len(form.get_tags()) >= MAX_TAGS:
+            self.set_message(
+                f"Tags must contain at most {MAX_TAGS} values.",
+                kind="error",
+            )
+            return
+
+        canonical_tag, error = self.app.ensure_global_tag(raw_tag)
+        if error:
+            self.set_message(error, kind="error")
+            return
+        if canonical_tag is not None:
+            self._add_tag_to_form(canonical_tag)
+
+    def _add_tag_to_form(self, raw_tag: str) -> bool:
+        form = self.query_one(EntryForm)
+        existing_tags = form.get_tags()
+        canonical_tag = self.app.get_tag_registry().canonicalize(raw_tag)
+        canonical_key = normalize_tag_key(canonical_tag)
+
+        if any(normalize_tag_key(tag) == canonical_key for tag in existing_tags):
+            form.clear_tag_input()
+            self._refresh_tag_suggestions()
+            self.set_message(f"Tag already added: {canonical_tag}.", kind="muted")
+            return True
+
+        if len(existing_tags) >= MAX_TAGS:
+            self.set_message(
+                f"Tags must contain at most {MAX_TAGS} values.",
+                kind="error",
+            )
+            return False
+
+        form.set_tags([*existing_tags, canonical_tag])
+        form.clear_tag_input()
+        self._refresh_tag_suggestions()
+        self.set_message("")
+        return True
+
+    def _hide_tag_suggestions(self) -> None:
+        self.tag_suggestions = []
+        self.highlighted_tag_index = None
+        self.query_one(EntryForm).hide_suggestions()
+
+    def _tag_suggestions_open(self) -> bool:
+        return not self.query_one(EntryForm).query_one(
+            "#tag-suggestions",
+            Static,
+        ).has_class("hidden")
+
+    def _tags_input_has_focus(self) -> bool:
+        return self.app.focused is self.query_one(EntryForm).query_one(
+            "#tags-input",
+            Input,
+        )

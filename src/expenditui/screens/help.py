@@ -44,10 +44,12 @@ class HelpPane(VerticalScroll):
 - a / A: create an entry in Edit
 - e / E: edit the selected entry in Edit
 - d / D: delete the selected entry in Edit
-- tab / shift+tab: move between fields while creating or editing
-- enter: advance fields and submit from the final field while creating or editing
+- tab / shift+tab: move between fields, or accept the highlighted tag suggestion
+- up / down: move through tag suggestions while editing tags
+- enter: advance fields, add or create tags, and submit from an empty tag field
+- backspace: remove the last attached tag when the tag input is empty
 - y / n: confirm or cancel delete in Edit
-- r: reload data from disk
+- r: reload data and resync global tags from disk
 - esc: cancel the active Edit modal, or return to Overview from Edit or Help
 - q: quit
 """.strip()
