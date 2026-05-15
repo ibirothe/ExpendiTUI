@@ -233,7 +233,9 @@ def test_malformed_tags_file_recovers_without_crashing(tmp_path, monkeypatch) ->
     assert "Invalid JSON" in result.diagnostics[0]
 
 
-def test_invalid_tags_are_skipped_and_duplicates_collapse(tmp_path, monkeypatch) -> None:
+def test_invalid_tags_are_skipped_and_duplicates_collapse(
+    tmp_path, monkeypatch
+) -> None:
     tags_path = tmp_path / "tags.json"
     tags_path.write_text(
         json.dumps(["Food", "food", "", 5, "Travel"], indent=2),
@@ -261,7 +263,9 @@ def test_save_tag_registry_writes_json_array_atomically(tmp_path, monkeypatch) -
     assert json.loads(saved_text) == ["Food", "Travel"]
 
 
-def test_app_load_state_reconciles_entry_tags_into_registry(tmp_path, monkeypatch) -> None:
+def test_app_load_state_reconciles_entry_tags_into_registry(
+    tmp_path, monkeypatch
+) -> None:
     expenses_path = tmp_path / "expenses.json"
     income_path = tmp_path / "income.json"
     tags_path = tmp_path / "tags.json"

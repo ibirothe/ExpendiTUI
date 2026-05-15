@@ -10,8 +10,11 @@ from expenditui.visualization import (
     DEFAULT_MAX_LEGEND_ENTRIES,
     DEFAULT_MAX_WIDTH,
     DEFAULT_OTHERS_THRESHOLD,
+    DEFAULT_SEGMENT_SYMBOL,
     DEFAULT_VISUALIZATION_TYPE,
     NO_DATA_MESSAGE,
+    NO_SPACE_MESSAGE,
+    IncomeExpenseVisualizationStrategy,
     OverviewVisualizationConfig,
     VisualizationConfig,
     VisualizationConfigManager,
@@ -52,6 +55,9 @@ def test_visualization_config_manager_normalizes_future_visualization_array(
                             "enabled": False,
                             "type": "tag_distribution",
                             "maxWidth": 24,
+                            "segmentSymbol": "▮",
+                            "tagColorSlots": ["warning", "accent"],
+                            "othersColorSlot": "muted",
                         },
                         {
                             "id": "income-expense",
@@ -76,6 +82,12 @@ def test_visualization_config_manager_normalizes_future_visualization_array(
         "tag-breakdown",
         "income-expense",
     ]
+    assert manager.config.overview_visualizations[0].segment_symbol == "▮"
+    assert manager.config.overview_visualizations[0].tag_color_slots == (
+        "warning",
+        "accent",
+    )
+    assert manager.config.overview_visualizations[0].others_color_slot == "muted"
     assert manager.config.overview_visualizations[1].max_width == 12
     assert manager.config.overview_visualizations[1].show_labels is False
 
@@ -91,6 +103,9 @@ def test_visualization_config_manager_recovers_from_invalid_fields(
                     "type": "unknown",
                     "maxWidth": 0,
                     "expenseSymbol": "",
+                    "segmentSymbol": "",
+                    "tagColorSlots": ["warning", "nope", 1],
+                    "othersColorSlot": "missing",
                     "maxLegendEntries": 0,
                     "othersThreshold": 9,
                 }
@@ -106,6 +121,9 @@ def test_visualization_config_manager_recovers_from_invalid_fields(
     assert panel.type == DEFAULT_VISUALIZATION_TYPE
     assert panel.max_width == DEFAULT_MAX_WIDTH
     assert panel.expense_symbol == DEFAULT_EXPENSE_SYMBOL
+    assert panel.segment_symbol == DEFAULT_SEGMENT_SYMBOL
+    assert panel.tag_color_slots == ("warning",)
+    assert panel.others_color_slot == "muted"
     assert panel.max_legend_entries == DEFAULT_MAX_LEGEND_ENTRIES
     assert panel.others_threshold == DEFAULT_OTHERS_THRESHOLD
     assert "Unsupported visualization type" in caplog.text
@@ -167,10 +185,113 @@ def test_visualization_renderer_returns_no_data_message_when_totals_are_empty() 
     assert [line.plain for line in result.lines] == [NO_DATA_MESSAGE]
 
 
-def test_visualization_renderer_falls_back_when_only_unsupported_panels_are_enabled() -> (
+def test_visualization_renderer_renders_tag_distribution_panel() -> None:
+    renderer = VisualizationRenderer()
+    config = VisualizationConfig(
+        overview_enabled=True,
+        overview_visualizations=(
+            OverviewVisualizationConfig(
+                type="tag_distribution",
+                max_width=8,
+                tag_color_slots=("warning", "accent"),
+            ),
+        ),
+    )
+
+    result = renderer.render(
+        config=config,
+        income_entries={"salary": make_entry("100.00")},
+        expense_entries={
+            "rent": make_entry("75.00", tags=["Housing"]),
+            "coffee": make_entry("25.00", tags=["Food"]),
+        },
+        available_width=32,
+        style_for_slot=lambda slot: f"style:{slot}",
+    )
+
+    assert [line.plain for line in result.lines] == ["▮" * 8]
+    assert [line.plain for line in result.legend] == ["▮ Housing", "▮ Food"]
+    assert result.lines[0].spans[0].style == "style:warning"
+    assert result.lines[0].spans[1].style == "style:accent"
+    assert result.legend[0].spans[0].style == "style:warning"
+
+
+def test_visualization_renderer_groups_tag_distribution_overflow_into_others() -> None:
+    renderer = VisualizationRenderer()
+    config = VisualizationConfig(
+        overview_enabled=True,
+        overview_visualizations=(
+            OverviewVisualizationConfig(
+                type="tag_distribution",
+                max_width=4,
+                others_threshold=0,
+                max_legend_entries=8,
+            ),
+        ),
+    )
+
+    result = renderer.render(
+        config=config,
+        income_entries={},
+        expense_entries={
+            "one": make_entry("40.00", tags=["One"]),
+            "two": make_entry("30.00", tags=["Two"]),
+            "three": make_entry("20.00", tags=["Three"]),
+            "four": make_entry("10.00", tags=["Four"]),
+            "five": make_entry("5.00", tags=["Five"]),
+        },
+        available_width=16,
+    )
+
+    assert [line.plain for line in result.lines] == ["▮" * 4]
+    assert [line.plain for line in result.legend] == [
+        "▮ One",
+        "▮ Two",
+        "▮ Three",
+        "▮ Others",
+    ]
+
+
+def test_visualization_renderer_returns_no_data_for_empty_tag_distribution() -> None:
+    renderer = VisualizationRenderer()
+    config = VisualizationConfig(
+        overview_enabled=True,
+        overview_visualizations=(OverviewVisualizationConfig(type="tag_distribution"),),
+    )
+
+    result = renderer.render(
+        config=config,
+        income_entries={"salary": make_entry("100.00")},
+        expense_entries={},
+        available_width=32,
+    )
+
+    assert [line.plain for line in result.lines] == [NO_DATA_MESSAGE]
+
+
+def test_visualization_renderer_returns_no_space_for_too_narrow_tag_distribution() -> (
     None
 ):
     renderer = VisualizationRenderer()
+    config = VisualizationConfig(
+        overview_enabled=True,
+        overview_visualizations=(OverviewVisualizationConfig(type="tag_distribution"),),
+    )
+
+    result = renderer.render(
+        config=config,
+        income_entries={},
+        expense_entries={"rent": make_entry("100.00", tags=["Housing"])},
+        available_width=0,
+    )
+
+    assert [line.plain for line in result.lines] == [NO_SPACE_MESSAGE]
+
+
+def test_visualization_renderer_falls_back_when_only_unsupported_panels_are_enabled() -> (
+    None
+):
+    renderer = VisualizationRenderer(strategies=(IncomeExpenseVisualizationStrategy(),))
     config = VisualizationConfig(
         overview_enabled=True,
         overview_visualizations=(

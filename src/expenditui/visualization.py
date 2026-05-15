@@ -16,6 +16,7 @@ from .calculations import monthly_equivalent, savings_monthly, total_monthly
 from .constants import APP_NAME, ROUNDING_MODE, VISUALIZATIONS_FILENAME
 from .models import FinancialEntry
 from .tags import normalize_tag_key
+from .theme import THEME_SLOT_NAMES
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +37,11 @@ DEFAULT_INCOME_SYMBOL = "█"
 DEFAULT_EXPENSE_SYMBOL = "█"
 DEFAULT_SAVINGS_SYMBOL = "█"
 DEFAULT_OTHERS_SYMBOL = "·"
+DEFAULT_SEGMENT_SYMBOL = "▮"
 DEFAULT_OVERVIEW_ENABLED = True
 DEFAULT_SHOW_LABELS = True
+DEFAULT_TAG_COLOR_SLOTS = ("warning", "accent", "success", "error", "foreground")
+DEFAULT_OTHERS_COLOR_SLOT = "muted"
 OTHERS_LABEL = "Others"
 NO_DATA_MESSAGE = "No financial data available."
 NO_SPACE_MESSAGE = "No space available for visualization."
@@ -57,11 +61,14 @@ class OverviewVisualizationConfig:
     expense_symbol: str = DEFAULT_EXPENSE_SYMBOL
     savings_symbol: str = DEFAULT_SAVINGS_SYMBOL
     others_symbol: str = DEFAULT_OTHERS_SYMBOL
+    segment_symbol: str = DEFAULT_SEGMENT_SYMBOL
     show_labels: bool = DEFAULT_SHOW_LABELS
     max_legend_entries: int = DEFAULT_MAX_LEGEND_ENTRIES
     others_threshold: float = DEFAULT_OTHERS_THRESHOLD
     multi_tag_strategy: str = DEFAULT_MULTI_TAG_STRATEGY
     group_by: str | None = None
+    tag_color_slots: tuple[str, ...] = DEFAULT_TAG_COLOR_SLOTS
+    others_color_slot: str = DEFAULT_OTHERS_COLOR_SLOT
 
 
 @dataclass(frozen=True, slots=True)
@@ -213,6 +220,11 @@ class VisualizationConfigManager:
                 default=DEFAULT_OTHERS_SYMBOL,
                 source=f"{source}.othersSymbol",
             ),
+            segment_symbol=_parse_symbol(
+                data.get("segmentSymbol"),
+                default=DEFAULT_SEGMENT_SYMBOL,
+                source=f"{source}.segmentSymbol",
+            ),
             show_labels=_parse_bool(
                 data.get("showLabels"),
                 default=DEFAULT_SHOW_LABELS,
@@ -232,6 +244,16 @@ class VisualizationConfigManager:
                 source=source,
             ),
             group_by=_parse_optional_string(data.get("groupBy")),
+            tag_color_slots=_parse_color_slots(
+                data.get("tagColorSlots"),
+                default=DEFAULT_TAG_COLOR_SLOTS,
+                source=f"{source}.tagColorSlots",
+            ),
+            others_color_slot=_parse_color_slot(
+                data.get("othersColorSlot"),
+                default=DEFAULT_OTHERS_COLOR_SLOT,
+                source=f"{source}.othersColorSlot",
+            ),
         )
 
 
@@ -275,6 +297,14 @@ class _BarItem:
     style_slot: str
 
 
+@dataclass(frozen=True, slots=True)
+class _DistributionItem:
+    label: str
+    symbol: str
+    value: Decimal
+    style_slot: str
+
+
 class VisualizationStrategy(Protocol):
     type: str
 
@@ -312,13 +342,31 @@ class IncomeExpenseVisualizationStrategy:
         )
 
 
+class TagDistributionVisualizationStrategy:
+    type = "tag_distribution"
+
+    def render(self, context: VisualizationContext) -> VisualizationResult:
+        buckets = aggregate_tag_distribution(context.expense_entries, context.config)
+        if not buckets:
+            return VisualizationResult(lines=(Text(NO_DATA_MESSAGE),))
+
+        return _render_distribution(
+            _distribution_items_from_buckets(buckets, context.config),
+            context=context,
+            max_segments=context.config.max_width,
+        )
+
+
 class VisualizationRenderer:
     def __init__(
         self,
         *,
         strategies: Sequence[VisualizationStrategy] | None = None,
     ) -> None:
-        strategy_rows = strategies or (IncomeExpenseVisualizationStrategy(),)
+        strategy_rows = strategies or (
+            IncomeExpenseVisualizationStrategy(),
+            TagDistributionVisualizationStrategy(),
+        )
         self._strategies = {strategy.type: strategy for strategy in strategy_rows}
 
     def render(
@@ -493,6 +541,163 @@ def _render_bar_items(
     return VisualizationResult(lines=(Text(NO_SPACE_MESSAGE),))
 
 
+def _distribution_items_from_buckets(
+    buckets: Sequence[TagDistributionBucket],
+    config: OverviewVisualizationConfig,
+) -> tuple[_DistributionItem, ...]:
+    color_slots = config.tag_color_slots or DEFAULT_TAG_COLOR_SLOTS
+    items: list[_DistributionItem] = []
+    for index, bucket in enumerate(buckets):
+        if bucket.key == normalize_tag_key(OTHERS_LABEL):
+            style_slot = config.others_color_slot
+        else:
+            style_slot = color_slots[index % len(color_slots)]
+        items.append(
+            _DistributionItem(
+                label=bucket.label,
+                symbol=config.segment_symbol,
+                value=bucket.amount,
+                style_slot=style_slot,
+            )
+        )
+    return tuple(items)
+
+
+def _render_distribution(
+    items: Sequence[_DistributionItem],
+    *,
+    context: VisualizationContext,
+    max_segments: int,
+) -> VisualizationResult:
+    if context.available_width <= 0:
+        return VisualizationResult(lines=(Text(NO_SPACE_MESSAGE),))
+
+    symbol_width = max(0, cell_len(context.config.segment_symbol))
+    if symbol_width <= 0:
+        return VisualizationResult(lines=(Text(NO_SPACE_MESSAGE),))
+
+    max_segments_by_width = context.available_width // symbol_width
+    target_segments = min(max_segments, max_segments_by_width)
+    if target_segments <= 0:
+        return VisualizationResult(lines=(Text(NO_SPACE_MESSAGE),))
+
+    fitted_items = _fit_distribution_items(
+        items,
+        max_items=target_segments,
+        others_color_slot=context.config.others_color_slot,
+    )
+    counts = _scale_distribution_to_segments(
+        [item.value for item in fitted_items],
+        target_segments=target_segments,
+    )
+    if not any(counts):
+        return VisualizationResult(lines=(Text(NO_DATA_MESSAGE),))
+
+    bar = Text()
+    for item, count in zip(fitted_items, counts, strict=True):
+        if count <= 0:
+            continue
+        bar.append(
+            item.symbol * count,
+            style=_resolve_style(context, item.style_slot),
+        )
+
+    legend = _render_distribution_legend(fitted_items, context=context)
+    return VisualizationResult(lines=(bar,), legend=legend)
+
+
+def _fit_distribution_items(
+    items: Sequence[_DistributionItem], *, max_items: int, others_color_slot: str
+) -> tuple[_DistributionItem, ...]:
+    positive_items = tuple(item for item in items if item.value > 0)
+    if max_items <= 0 or len(positive_items) <= max_items:
+        return positive_items
+
+    if max_items == 1:
+        return (
+            _DistributionItem(
+                label=OTHERS_LABEL,
+                symbol=positive_items[0].symbol,
+                value=sum((item.value for item in positive_items), Decimal("0")),
+                style_slot=others_color_slot,
+            ),
+        )
+
+    retained = list(positive_items[: max_items - 1])
+    overflow = positive_items[max_items - 1 :]
+    retained.append(
+        _DistributionItem(
+            label=OTHERS_LABEL,
+            symbol=positive_items[0].symbol,
+            value=sum((item.value for item in overflow), Decimal("0")),
+            style_slot=others_color_slot,
+        )
+    )
+    return tuple(retained)
+
+
+def _scale_distribution_to_segments(
+    values: Sequence[Decimal], *, target_segments: int
+) -> list[int]:
+    if target_segments <= 0:
+        return [0 for _ in values]
+
+    clamped = [max(Decimal("0"), value) for value in values]
+    positive_indices = [index for index, value in enumerate(clamped) if value > 0]
+    if not positive_indices:
+        return [0 for _ in values]
+
+    counts = [0 for _ in values]
+    if len(positive_indices) >= target_segments:
+        for index in positive_indices[:target_segments]:
+            counts[index] = 1
+        return counts
+
+    for index in positive_indices:
+        counts[index] = 1
+
+    total_value = sum((clamped[index] for index in positive_indices), Decimal("0"))
+    remaining = target_segments - len(positive_indices)
+    allocations: list[tuple[Decimal, int]] = []
+    for index in positive_indices:
+        exact_extra = (clamped[index] / total_value) * Decimal(remaining)
+        whole_extra = int(exact_extra)
+        counts[index] += whole_extra
+        allocations.append((exact_extra - Decimal(whole_extra), index))
+
+    assigned = sum(counts)
+    for _fraction, index in sorted(allocations, key=lambda item: (-item[0], item[1])):
+        if assigned >= target_segments:
+            break
+        counts[index] += 1
+        assigned += 1
+
+    return counts
+
+
+def _render_distribution_legend(
+    items: Sequence[_DistributionItem],
+    *,
+    context: VisualizationContext,
+) -> tuple[Text, ...]:
+    legend: list[Text] = []
+    symbol_width = cell_len(context.config.segment_symbol)
+    label_available_width = context.available_width - symbol_width - 1
+    if label_available_width <= 0:
+        return ()
+
+    for item in items:
+        label = _truncate_to_width(item.label, label_available_width)
+        if not label:
+            continue
+        line = Text()
+        line.append(item.symbol, style=_resolve_style(context, item.style_slot))
+        line.append(" ")
+        line.append(label)
+        legend.append(line)
+    return tuple(legend)
+
+
 def _try_render_bar_mode(
     items: Sequence[_BarItem],
     *,
@@ -587,6 +792,20 @@ def _pad_to_width(label: str, width: int) -> str:
     return label + (" " * padding)
 
 
+def _truncate_to_width(value: str, width: int) -> str:
+    if width <= 0:
+        return ""
+    output = ""
+    used_width = 0
+    for character in value:
+        character_width = cell_len(character)
+        if used_width + character_width > width:
+            break
+        output += character
+        used_width += character_width
+    return output
+
+
 def _resolve_style(context: VisualizationContext, slot_name: str) -> str:
     if context.style_for_slot is None:
         return ""
@@ -631,6 +850,57 @@ def _parse_symbol(value: object, *, default: str, source: str) -> str:
         logger.warning("Invalid symbol %r in %s; using %r.", value, source, default)
         return default
     return symbol
+
+
+def _parse_color_slots(
+    value: object,
+    *,
+    default: tuple[str, ...],
+    source: str,
+) -> tuple[str, ...]:
+    if value is None:
+        return default
+    if not isinstance(value, list):
+        logger.warning("Invalid color slot list in %s; using defaults.", source)
+        return default
+
+    slots: list[str] = []
+    for index, item in enumerate(value, start=1):
+        slot = _parse_color_slot(
+            item,
+            default="",
+            source=f"{source}[{index}]",
+            warn_on_missing=True,
+        )
+        if slot:
+            slots.append(slot)
+
+    if not slots:
+        logger.warning("No valid color slots in %s; using defaults.", source)
+        return default
+    return tuple(slots)
+
+
+def _parse_color_slot(
+    value: object,
+    *,
+    default: str,
+    source: str,
+    warn_on_missing: bool = False,
+) -> str:
+    if value is None:
+        if warn_on_missing:
+            logger.warning("Invalid color slot %r in %s; skipping.", value, source)
+        return default
+    if not isinstance(value, str):
+        logger.warning("Invalid color slot %r in %s; using %s.", value, source, default)
+        return default
+
+    slot = value.strip()
+    if slot not in THEME_SLOT_NAMES:
+        logger.warning("Invalid color slot %r in %s; using %s.", value, source, default)
+        return default
+    return slot
 
 
 def _parse_bool(value: object, *, default: bool) -> bool:
