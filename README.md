@@ -149,6 +149,25 @@ Example:
 }
 ```
 
+Tag-based expenditure distribution can be enabled with theme-colored text
+segments:
+
+```json
+{
+  "overview": {
+    "enabled": true,
+    "type": "tag_distribution",
+    "groupBy": "tags",
+    "maxWidth": 24,
+    "othersThreshold": 0.05,
+    "maxLegendEntries": 6,
+    "segmentSymbol": "▮",
+    "tagColorSlots": ["warning", "accent", "success", "error", "foreground"],
+    "othersColorSlot": "muted"
+  }
+}
+```
+
 ## Navigation
 
 ExpendiTUI has four visible tabs:

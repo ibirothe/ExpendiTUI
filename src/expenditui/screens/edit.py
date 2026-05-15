@@ -148,7 +148,9 @@ class EntryForm(Vertical):
     def _render_selected_tags(self) -> None:
         widget = self.query_one("#selected-tags", Static)
         if not self._attached_tags:
-            widget.update(Text("No tags selected.", style=self.app.theme_rich_style("muted")))
+            widget.update(
+                Text("No tags selected.", style=self.app.theme_rich_style("muted"))
+            )
             return
 
         text = Text()
@@ -591,7 +593,11 @@ class EditPane(Vertical):
             self._handle_confirmation_key(event)
             return
 
-        if event.key == "escape" and self._tag_suggestions_open() and self._tags_input_has_focus():
+        if (
+            event.key == "escape"
+            and self._tag_suggestions_open()
+            and self._tags_input_has_focus()
+        ):
             event.stop()
             event.prevent_default()
             self._hide_tag_suggestions()
@@ -603,7 +609,11 @@ class EditPane(Vertical):
             self._move_tag_highlight(-1)
             return
 
-        if event.key == "down" and self._tags_input_has_focus() and self.tag_suggestions:
+        if (
+            event.key == "down"
+            and self._tags_input_has_focus()
+            and self.tag_suggestions
+        ):
             event.stop()
             event.prevent_default()
             self._move_tag_highlight(1)
@@ -956,10 +966,14 @@ class EditPane(Vertical):
         self.query_one(EntryForm).hide_suggestions()
 
     def _tag_suggestions_open(self) -> bool:
-        return not self.query_one(EntryForm).query_one(
-            "#tag-suggestions",
-            Static,
-        ).has_class("hidden")
+        return (
+            not self.query_one(EntryForm)
+            .query_one(
+                "#tag-suggestions",
+                Static,
+            )
+            .has_class("hidden")
+        )
 
     def _tags_input_has_focus(self) -> bool:
         return self.app.focused is self.query_one(EntryForm).query_one(

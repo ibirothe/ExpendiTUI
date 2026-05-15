@@ -35,7 +35,7 @@ GLOBAL_SHORTCUTS = ShortcutSection(
         ShortcutItem("s", "Open Settings tab"),
         ShortcutItem(
             "pgup / pgdn",
-            "Scroll the active Overview, Edit, or Help view one page up or down.",
+            "Scroll contents",
         ),
         ShortcutItem("t", "Cycle color themes"),
         ShortcutItem("r", "Reload entries and tags from disk"),
@@ -129,9 +129,7 @@ class HelpPane(VerticalScroll):
             )
         )
 
-    def _build_shortcut_panel(
-        self, theme: AppTheme, section: ShortcutSection
-    ) -> Panel:
+    def _build_shortcut_panel(self, theme: AppTheme, section: ShortcutSection) -> Panel:
         table = Table(
             expand=True,
             box=None,

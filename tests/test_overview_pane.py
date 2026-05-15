@@ -28,7 +28,9 @@ def test_page_actions_target_overview_table(monkeypatch) -> None:
     assert calls == ["up", "down"]
 
 
-def test_overview_layout_keeps_summary_and_visualization_visible_when_height_is_tight() -> None:
+def test_overview_layout_keeps_summary_and_visualization_visible_when_height_is_tight() -> (
+    None
+):
     async def run() -> None:
         app = ExpendiTUIApp()
         app.expenses = {
@@ -50,7 +52,9 @@ def test_overview_layout_keeps_summary_and_visualization_visible_when_height_is_
         async with app.run_test(size=(100, 20)):
             overview = app.query_one(OverviewPane)
             totals_section = overview.query_one("#overview-totals-section")
-            visualization_section = overview.query_one("#overview-visualization-section")
+            visualization_section = overview.query_one(
+                "#overview-visualization-section"
+            )
             table = overview.query_one("#overview-table")
 
             assert totals_section.size.height > 0
@@ -61,7 +65,10 @@ def test_overview_layout_keeps_summary_and_visualization_visible_when_height_is_
                 == visualization_section.virtual_size.height
             )
             assert table.size.height < table.virtual_size.height
-            assert table.size.height < totals_section.size.height + visualization_section.size.height
+            assert (
+                table.size.height
+                < totals_section.size.height + visualization_section.size.height
+            )
 
     asyncio.run(run())
 

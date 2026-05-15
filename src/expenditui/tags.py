@@ -99,9 +99,7 @@ class TagRegistry:
                 contains_matches.append(display_tag)
 
         key_fn = str.casefold
-        return sorted(prefix_matches, key=key_fn) + sorted(
-            contains_matches, key=key_fn
-        )
+        return sorted(prefix_matches, key=key_fn) + sorted(contains_matches, key=key_fn)
 
     def to_list(self) -> list[str]:
         return sorted(self._tags.values(), key=str.casefold)
