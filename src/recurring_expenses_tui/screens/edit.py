@@ -12,6 +12,7 @@ from textual.widgets import DataTable, Input, Label, Static
 
 from ..constants import DEFAULT_FREQUENCY
 from ..models import ExpenseEntry
+from ..theme import AppTheme
 
 
 @dataclass
@@ -106,7 +107,6 @@ class EditPane(Vertical):
         width: 34;
         height: 1fr;
         padding: 0 1;
-        border-left: solid $surface-lighten-1;
     }
 
     .field-label {
@@ -116,14 +116,12 @@ class EditPane(Vertical):
     #delete-confirm {
         margin: 0 1 1 1;
         padding: 1 2;
-        border: round $warning;
         content-align: center middle;
     }
 
     #edit-message {
         min-height: 2;
         padding: 0 2 1 2;
-        color: red;
     }
 
     .hidden {
@@ -138,6 +136,7 @@ class EditPane(Vertical):
         self.mode = EditMode.NAVIGATION
         self.modal_origin_index = 0
         self.modal_target_index: int | None = None
+        self.message_kind = "foreground"
 
     def compose(self) -> ComposeResult:
         yield Static(id="edit-title")
@@ -151,6 +150,10 @@ class EditPane(Vertical):
     def blocks_app_navigation(self) -> bool:
         return self.mode is not EditMode.NAVIGATION
 
+    @property
+    def blocks_theme_switch(self) -> bool:
+        return self.mode in {EditMode.CREATE, EditMode.EDIT}
+
     def on_mount(self) -> None:
         table = self.query_one("#edit-table", DataTable)
         table.cursor_type = "row"
@@ -159,6 +162,7 @@ class EditPane(Vertical):
         table.add_column("Amount", key="amount", width=12)
         table.add_column("Frequency", key="frequency", width=12)
         self.load_from_app()
+        self.apply_theme(self.app.active_theme)
 
     def load_from_app(self, *, select_name: str | None = None) -> None:
         current_name = select_name or self.selected_name
@@ -220,7 +224,7 @@ class EditPane(Vertical):
 
     def start_edit(self) -> None:
         if not self.entries:
-            self.set_message("There is no entry to edit.")
+            self.set_message("There is no entry to edit.", kind="error")
             return
         current = self.entries[self.current_index]
         self.modal_origin_index = self.current_index
@@ -234,7 +238,7 @@ class EditPane(Vertical):
 
     def start_delete_confirmation(self) -> None:
         if not self.entries:
-            self.set_message("There is no entry to delete.")
+            self.set_message("There is no entry to delete.", kind="error")
             return
         self.modal_origin_index = self.current_index
         self.modal_target_index = self.current_index
@@ -274,12 +278,12 @@ class EditPane(Vertical):
 
         validated, errors = self.validate_entries(updated_entries)
         if errors:
-            self.set_message(" | ".join(errors))
+            self.set_message(" | ".join(errors), kind="error")
             return
 
         error = self.app.save_state(validated)
         if error:
-            self.set_message(error)
+            self.set_message(error, kind="error")
             return
 
         selection_name = draft.name.strip()
@@ -287,7 +291,8 @@ class EditPane(Vertical):
         self.load_from_app(select_name=selection_name)
         self.focus_table()
         self.set_message(
-            f"{'Created' if operation is EditMode.CREATE else 'Updated'} entry: {selection_name}."
+            f"{'Created' if operation is EditMode.CREATE else 'Updated'} entry: {selection_name}.",
+            kind="success",
         )
 
     def confirm_delete(self) -> None:
@@ -300,12 +305,12 @@ class EditPane(Vertical):
 
         validated, errors = self.validate_entries(updated_entries)
         if errors:
-            self.set_message(" | ".join(errors))
+            self.set_message(" | ".join(errors), kind="error")
             return
 
         error = self.app.save_state(validated)
         if error:
-            self.set_message(error)
+            self.set_message(error, kind="error")
             return
 
         next_selection = None
@@ -316,7 +321,7 @@ class EditPane(Vertical):
         self.app.refresh_views(sync_edit=False)
         self.load_from_app(select_name=next_selection)
         self.focus_table()
-        self.set_message(f"Deleted entry: {removed.name}.")
+        self.set_message(f"Deleted entry: {removed.name}.", kind="success")
 
     def validate_entries(self, entries: list[DraftExpense]) -> tuple[dict[str, ExpenseEntry], list[str]]:
         validated: dict[str, ExpenseEntry] = {}
@@ -344,8 +349,11 @@ class EditPane(Vertical):
 
         return validated, errors
 
-    def set_message(self, message: str) -> None:
-        self.query_one("#edit-message", Static).update(message)
+    def set_message(self, message: str, *, kind: str = "foreground") -> None:
+        self.message_kind = kind
+        widget = self.query_one("#edit-message", Static)
+        widget.styles.color = self._message_color(kind)
+        widget.update(message)
 
     @property
     def selected_name(self) -> str | None:
@@ -454,6 +462,7 @@ class EditPane(Vertical):
                 EditMode.CONFIRM_DELETE: "Edit Recurring Expenses · Confirm Delete",
             }[self.mode]
         )
+        self._refresh_app_bindings()
 
     def _index_for_name(self, name: str | None) -> int:
         if name is None:
@@ -476,11 +485,14 @@ class EditPane(Vertical):
 
     def _render_row(self, index: int, entry: DraftExpense) -> tuple[Text | str, Text | str, Text | str]:
         tag: str | None = None
+        accent_slot = "accent"
         if self.modal_target_index == index:
             if self.mode is EditMode.EDIT:
                 tag = "EDITING"
+                accent_slot = "accent"
             elif self.mode is EditMode.CONFIRM_DELETE:
                 tag = "DELETE"
+                accent_slot = "error"
 
         if tag is None:
             return (
@@ -489,8 +501,60 @@ class EditPane(Vertical):
                 entry.frequency,
             )
 
-        style = "bold black on yellow"
-        name = Text.assemble((f"{entry.name or '<blank>'} ", style), (f"[{tag}]", "bold yellow"))
-        amount = Text(entry.amount, style=style)
-        frequency = Text(entry.frequency, style=style)
+        row_style = self.app.theme_rich_style(
+            "background",
+            background_slot=accent_slot,
+            bold=True,
+        )
+        tag_style = self.app.theme_rich_style(accent_slot, bold=True)
+        name = Text.assemble((f"{entry.name or '<blank>'} ", row_style), (f"[{tag}]", tag_style))
+        amount = Text(entry.amount, style=row_style)
+        frequency = Text(entry.frequency, style=row_style)
         return name, amount, frequency
+
+    def apply_theme(self, theme: AppTheme) -> None:
+        self.styles.background = theme.background
+        self.styles.color = theme.foreground
+        self.query_one("#edit-title", Static).set_styles(
+            background=theme.surface,
+            color=theme.accent,
+        )
+        self.query_one("#edit-table", DataTable).set_styles(
+            background=theme.surface,
+            color=theme.foreground,
+        )
+        form = self.query_one(ExpenseForm)
+        form.styles.background = theme.surface
+        form.styles.color = theme.foreground
+        form.styles.border_left = ("solid", theme.muted)
+
+        dialog = self.query_one("#delete-confirm", ConfirmDialog)
+        dialog.styles.background = theme.surface
+        dialog.styles.color = theme.foreground
+        dialog.styles.border = ("round", theme.warning)
+        for label in self.query(".field-label"):
+            label.styles.color = theme.muted
+        self.query_one("#edit-message", Static).set_styles(
+            background=theme.background,
+            color=self._message_color(self.message_kind),
+        )
+        self.refresh_theme_state()
+
+    def refresh_theme_state(self) -> None:
+        if self.entries:
+            self.refresh_table()
+        self.query_one("#edit-message", Static).styles.color = self._message_color(self.message_kind)
+
+    def _message_color(self, kind: str) -> str:
+        slot_name = {
+            "success": "success",
+            "error": "error",
+            "accent": "accent",
+            "muted": "muted",
+        }.get(kind, "foreground")
+        return self.app.theme_color(slot_name)
+
+    def _refresh_app_bindings(self) -> None:
+        refresh_bindings = getattr(self.app, "refresh_bindings", None)
+        if callable(refresh_bindings):
+            refresh_bindings()

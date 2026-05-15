@@ -7,6 +7,7 @@ from textual.widgets import DataTable, Static
 
 from ..calculations import monthly_equivalent, total_monthly, total_yearly, yearly_equivalent
 from ..constants import APP_TITLE
+from ..theme import AppTheme
 
 
 def format_money(value) -> str:
@@ -50,6 +51,23 @@ class OverviewPane(Vertical):
     def on_screen_resume(self) -> None:
         self.refresh_view()
 
+    def apply_theme(self, theme: AppTheme) -> None:
+        self.styles.background = theme.background
+        self.styles.color = theme.foreground
+        self.query_one("#overview-title", Static).set_styles(
+            background=theme.surface,
+            color=theme.accent,
+        )
+        self.query_one("#overview-table", DataTable).set_styles(
+            background=theme.surface,
+            color=theme.foreground,
+        )
+        self.query_one("#overview-totals", Static).set_styles(
+            background=theme.background,
+            color=theme.foreground,
+        )
+        self.refresh_view()
+
     def refresh_view(self) -> None:
         table = self.query_one("#overview-table", DataTable)
         table.clear(columns=False)
@@ -67,6 +85,12 @@ class OverviewPane(Vertical):
         monthly_total = total_monthly(expenses)
         yearly_total = total_yearly(expenses)
         totals = Text()
-        totals.append(f"Total monthly base cost: {format_money(monthly_total)}\n", style="bold green")
-        totals.append(f"Total yearly base cost: {format_money(yearly_total)}", style="bold cyan")
+        totals.append(
+            f"Total monthly base cost: {format_money(monthly_total)}\n",
+            style=self.app.theme_rich_style("success", bold=True),
+        )
+        totals.append(
+            f"Total yearly base cost: {format_money(yearly_total)}",
+            style=self.app.theme_rich_style("accent", bold=True),
+        )
         self.query_one("#overview-totals", Static).update(totals)

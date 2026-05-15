@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 from recurring_expenses_tui.models import ExpenseEntry, Frequency
 from recurring_expenses_tui.screens.edit import DraftExpense, EditMode, EditPane, ExpenseForm
+from recurring_expenses_tui.theme import AppTheme
 
 
 class FakeKeyEvent:
@@ -93,6 +94,7 @@ class FakeTable:
         self.app = app
         self.rows: list[tuple[object, object, object]] = []
         self.cursor_row = 0
+        self.styles = SimpleNamespace(background=None, color=None)
 
     def clear(self, *, columns: bool = False) -> None:
         self.rows.clear()
@@ -107,13 +109,23 @@ class FakeTable:
         self.app.focused = self
 
 
+class FakeStyles(SimpleNamespace):
+    color: str | None
+    background: str | None
+
+
 class FakeStatic:
     def __init__(self, app: "FakeApp") -> None:
         self.app = app
         self.renderable = ""
+        self.styles = FakeStyles(color=None, background=None)
 
     def update(self, value: str) -> None:
         self.renderable = value
+
+    def set_styles(self, **styles: str) -> None:
+        for name, value in styles.items():
+            setattr(self.styles, name, value)
 
 
 class FakeDialog(FakeStatic):
@@ -138,6 +150,17 @@ class FakeApp:
         self.focused: object | None = None
         self.saved_payload: dict[str, ExpenseEntry] | None = None
         self.refresh_views_calls = 0
+        self.active_theme = AppTheme(
+            name="Test",
+            background="#111111",
+            foreground="#EEEEEE",
+            surface="#222222",
+            accent="#3366FF",
+            success="#00AA66",
+            warning="#FFAA00",
+            error="#CC3333",
+            muted="#888888",
+        )
 
     def save_state(self, data: dict[str, ExpenseEntry]) -> str | None:
         self.saved_payload = dict(data)
@@ -146,6 +169,22 @@ class FakeApp:
 
     def refresh_views(self, *, sync_edit: bool = False) -> None:
         self.refresh_views_calls += 1
+
+    def theme_color(self, slot_name: str) -> str:
+        return self.active_theme.color(slot_name)
+
+    def theme_rich_style(
+        self,
+        foreground_slot: str,
+        *,
+        background_slot: str | None = None,
+        bold: bool = False,
+    ) -> str:
+        return self.active_theme.rich_style(
+            foreground_slot,
+            background_slot=background_slot,
+            bold=bold,
+        )
 
 
 class StubEditPane(EditPane):
@@ -202,6 +241,7 @@ def test_navigation_mode_hides_form_and_supports_jk_navigation() -> None:
 
     pane.on_key(FakeKeyEvent("k"))
     assert pane.current_index == 0
+    assert pane.blocks_theme_switch is False
 
 
 def test_create_flow_inserts_below_selection_and_selects_new_entry() -> None:
@@ -234,6 +274,29 @@ def test_create_validation_failure_keeps_form_open() -> None:
     assert list(app.expenses) == ["rent", "insurance"]
 
 
+def test_create_duplicate_name_and_save_failure_keep_modal_open() -> None:
+    pane, app = build_pane()
+    form = pane.query_one(ExpenseForm)
+
+    pane.start_create()
+    form.query_one("#name-input").value = "rent"
+    form.query_one("#amount-input").value = "10.00"
+    pane.submit_form()
+
+    assert pane.mode is EditMode.CREATE
+    assert "duplicate name 'rent'" in pane.query_one("#edit-message").renderable
+    assert app.refresh_views_calls == 0
+
+    form.query_one("#name-input").value = "utilities"
+    app.save_state = lambda data: "disk full"  # type: ignore[method-assign]
+    pane.submit_form()
+
+    assert pane.mode is EditMode.CREATE
+    assert pane.query_one("#edit-message").renderable == "disk full"
+    assert list(app.expenses) == ["rent", "insurance"]
+    assert app.refresh_views_calls == 0
+
+
 def test_edit_flow_supports_cancel_and_submit() -> None:
     pane, app = build_pane()
     table = pane.query_one("#edit-table")
@@ -262,6 +325,46 @@ def test_edit_flow_supports_cancel_and_submit() -> None:
     assert app.focused is table
 
 
+def test_keyboard_shortcuts_drive_modal_entry_and_field_navigation() -> None:
+    pane, app = build_pane()
+    table = pane.query_one("#edit-table")
+    form = pane.query_one(ExpenseForm)
+
+    add_event = FakeKeyEvent("a")
+    pane.on_key(add_event)
+
+    name_input = form.query_one("#name-input")
+    amount_input = form.query_one("#amount-input")
+    frequency_input = form.query_one("#frequency-input")
+
+    assert add_event.stopped
+    assert add_event.default_prevented
+    assert pane.mode is EditMode.CREATE
+    assert pane.blocks_theme_switch is True
+    assert app.focused is name_input
+    assert frequency_input.value == "monthly"
+
+    tab_event = FakeKeyEvent("tab", character="")
+    pane.on_key(tab_event)
+    assert tab_event.stopped
+    assert tab_event.default_prevented
+    assert app.focused is amount_input
+
+    shift_tab_event = FakeKeyEvent("shift+tab", character="")
+    pane.on_key(shift_tab_event)
+    assert shift_tab_event.stopped
+    assert shift_tab_event.default_prevented
+    assert app.focused is name_input
+
+    escape_event = FakeKeyEvent("escape", character="")
+    pane.on_key(escape_event)
+    assert escape_event.stopped
+    assert escape_event.default_prevented
+    assert pane.mode is EditMode.NAVIGATION
+    assert app.focused is table
+    assert pane.blocks_theme_switch is False
+
+
 def test_delete_confirmation_requires_explicit_choice_and_updates_selection() -> None:
     pane, app = build_pane()
     table = pane.query_one("#edit-table")
@@ -288,6 +391,18 @@ def test_delete_confirmation_requires_explicit_choice_and_updates_selection() ->
     assert app.focused is table
 
 
+def test_delete_confirmation_escape_cancels_without_mutating_entries() -> None:
+    pane, app = build_pane()
+
+    pane.current_index = 1
+    pane.start_delete_confirmation()
+    pane.on_key(FakeKeyEvent("escape", character=""))
+
+    assert pane.mode is EditMode.NAVIGATION
+    assert pane.selected_name == "insurance"
+    assert list(app.expenses) == ["rent", "insurance"]
+
+
 def test_submitted_input_advances_fields_and_final_submit_persists() -> None:
     pane, app = build_pane()
     pane.start_create()
@@ -307,3 +422,29 @@ def test_submitted_input_advances_fields_and_final_submit_persists() -> None:
 
     pane.on_input_submitted(SimpleNamespace(input=frequency_input, stop=lambda: None))  # type: ignore[arg-type]
     assert list(app.expenses) == ["rent", "phone", "insurance"]
+
+
+def test_empty_state_edit_and_delete_show_messages_without_leaving_navigation() -> None:
+    app = FakeApp({})
+    pane = StubEditPane(app)
+    pane.load_from_app()
+
+    pane.start_edit()
+    assert pane.mode is EditMode.NAVIGATION
+    assert pane.query_one("#edit-message").renderable == "There is no entry to edit."
+
+    pane.start_delete_confirmation()
+    assert pane.mode is EditMode.NAVIGATION
+    assert pane.query_one("#edit-message").renderable == "There is no entry to delete."
+
+
+def test_row_events_update_selection_only_while_navigating() -> None:
+    pane, _app = build_pane()
+
+    pane.on_data_table_row_selected(SimpleNamespace(row_key="row-1"))  # type: ignore[arg-type]
+    assert pane.current_index == 1
+
+    pane.start_edit()
+    pane.on_data_table_row_highlighted(SimpleNamespace(row_key="row-0"))  # type: ignore[arg-type]
+
+    assert pane.current_index == 1
