@@ -105,7 +105,9 @@ class RecurringExpensesApp(App[None]):
             bold=bold,
         )
 
-    def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
+    def on_tabbed_content_tab_activated(
+        self, event: TabbedContent.TabActivated
+    ) -> None:
         next_tab_id = event.pane.id or OVERVIEW_TAB
         if (
             self.active_tab_id == EDIT_TAB
@@ -167,7 +169,10 @@ class RecurringExpensesApp(App[None]):
         self.refresh_bindings()
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        if action in {"reload", "show_overview", "show_help", "back"} and self.edit_mode_blocks_global_actions():
+        if (
+            action in {"reload", "show_overview", "show_help", "back"}
+            and self.edit_mode_blocks_global_actions()
+        ):
             return False
         if action == "cycle_theme":
             return not self.theme_switch_blocks_global_actions()
@@ -236,7 +241,9 @@ class RecurringExpensesApp(App[None]):
             message.update(self.theme_notice)
             return
         if self.status_message:
-            color_slot = "success" if self.status_message_kind == "success" else "foreground"
+            color_slot = (
+                "success" if self.status_message_kind == "success" else "foreground"
+            )
             message.styles.color = self.theme_color(color_slot)
             message.update(self.status_message)
             return
@@ -247,7 +254,9 @@ class RecurringExpensesApp(App[None]):
         self._theme_notice_token += 1
         token = self._theme_notice_token
         self.refresh_message_area()
-        self.set_timer(THEME_NOTICE_SECONDS, callback=lambda: self._clear_theme_notice(token))
+        self.set_timer(
+            THEME_NOTICE_SECONDS, callback=lambda: self._clear_theme_notice(token)
+        )
 
     def _clear_theme_notice(self, token: int) -> None:
         if token != self._theme_notice_token:
@@ -300,7 +309,9 @@ class RecurringExpensesApp(App[None]):
             self.refresh_message_area()
 
     def _install_theme_css(self, theme: AppTheme) -> None:
-        self.stylesheet.add_source(self._build_theme_css(theme), read_from=THEME_CSS_SOURCE)
+        self.stylesheet.add_source(
+            self._build_theme_css(theme), read_from=THEME_CSS_SOURCE
+        )
         self.refresh_css(animate=False)
 
     def _build_theme_css(self, theme: AppTheme) -> str:

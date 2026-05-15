@@ -74,7 +74,9 @@ class ExpenseForm(Vertical):
         ]
         focused = self.app.focused
         try:
-            current_index = next(index for index, field in enumerate(fields) if field is focused)
+            current_index = next(
+                index for index, field in enumerate(fields) if field is focused
+            )
         except StopIteration:
             current_index = 0
 
@@ -167,7 +169,9 @@ class EditPane(Vertical):
     def load_from_app(self, *, select_name: str | None = None) -> None:
         current_name = select_name or self.selected_name
         self.entries = [
-            DraftExpense(name=name, amount=f"{entry.amount:.2f}", frequency=entry.frequency.value)
+            DraftExpense(
+                name=name, amount=f"{entry.amount:.2f}", frequency=entry.frequency.value
+            )
             for name, entry in self.app.expenses.items()
         ]
         self.current_index = self._index_for_name(current_name)
@@ -208,7 +212,9 @@ class EditPane(Vertical):
     def move_selection(self, delta: int) -> None:
         if not self.entries:
             return
-        self.current_index = max(0, min(self.current_index + delta, len(self.entries) - 1))
+        self.current_index = max(
+            0, min(self.current_index + delta, len(self.entries) - 1)
+        )
         self.query_one("#edit-table", DataTable).move_cursor(
             row=self.current_index,
             column=0,
@@ -232,7 +238,9 @@ class EditPane(Vertical):
         self.mode = EditMode.EDIT
         self.refresh_table()
         self._show_form(
-            DraftExpense(name=current.name, amount=current.amount, frequency=current.frequency)
+            DraftExpense(
+                name=current.name, amount=current.amount, frequency=current.frequency
+            )
         )
         self.set_message("")
 
@@ -253,7 +261,9 @@ class EditPane(Vertical):
     def cancel_modal(self) -> None:
         self.mode = EditMode.NAVIGATION
         if self.entries:
-            self.current_index = max(0, min(self.modal_origin_index, len(self.entries) - 1))
+            self.current_index = max(
+                0, min(self.modal_origin_index, len(self.entries) - 1)
+            )
         else:
             self.current_index = 0
         self.modal_target_index = None
@@ -323,7 +333,9 @@ class EditPane(Vertical):
         self.focus_table()
         self.set_message(f"Deleted entry: {removed.name}.", kind="success")
 
-    def validate_entries(self, entries: list[DraftExpense]) -> tuple[dict[str, ExpenseEntry], list[str]]:
+    def validate_entries(
+        self, entries: list[DraftExpense]
+    ) -> tuple[dict[str, ExpenseEntry], list[str]]:
         validated: dict[str, ExpenseEntry] = {}
         seen_names: set[str] = set()
         errors: list[str] = []
@@ -483,7 +495,9 @@ class EditPane(Vertical):
         if 0 <= index < len(self.entries):
             self.current_index = index
 
-    def _render_row(self, index: int, entry: DraftExpense) -> tuple[Text | str, Text | str, Text | str]:
+    def _render_row(
+        self, index: int, entry: DraftExpense
+    ) -> tuple[Text | str, Text | str, Text | str]:
         tag: str | None = None
         accent_slot = "accent"
         if self.modal_target_index == index:
@@ -507,7 +521,9 @@ class EditPane(Vertical):
             bold=True,
         )
         tag_style = self.app.theme_rich_style(accent_slot, bold=True)
-        name = Text.assemble((f"{entry.name or '<blank>'} ", row_style), (f"[{tag}]", tag_style))
+        name = Text.assemble(
+            (f"{entry.name or '<blank>'} ", row_style), (f"[{tag}]", tag_style)
+        )
         amount = Text(entry.amount, style=row_style)
         frequency = Text(entry.frequency, style=row_style)
         return name, amount, frequency
@@ -543,7 +559,9 @@ class EditPane(Vertical):
     def refresh_theme_state(self) -> None:
         if self.entries:
             self.refresh_table()
-        self.query_one("#edit-message", Static).styles.color = self._message_color(self.message_kind)
+        self.query_one("#edit-message", Static).styles.color = self._message_color(
+            self.message_kind
+        )
 
     def _message_color(self, kind: str) -> str:
         slot_name = {

@@ -30,7 +30,7 @@ Create a fresh virtual environment, activate it, and install the package:
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -e .[dev]
+pip install -e ".[dev]"
 ```
 
 If you use `uv`, the equivalent setup is:
@@ -38,12 +38,12 @@ If you use `uv`, the equivalent setup is:
 ```bash
 uv venv
 source .venv/bin/activate
-uv pip install -e .[dev]
+uv pip install -e ".[dev]"
 ```
 
 Activation alone is not enough. The `recurring-expenses-tui` command is only
-added to the virtual environment after `pip install -e .[dev]` or
-`uv pip install -e .[dev]` succeeds.
+added to the virtual environment after `pip install -e ".[dev]"` or
+`uv pip install -e ".[dev]"` succeeds.
 
 ## Usage
 
@@ -81,7 +81,7 @@ If that command prints nothing, recreate the environment and reinstall:
 rm -rf .venv
 python -m venv .venv
 source .venv/bin/activate
-pip install -e .[dev]
+pip install -e ".[dev]"
 ```
 
 Then run:
@@ -115,7 +115,7 @@ continues with an empty in-memory expense list where possible.
 If `themes.json` is missing, malformed, empty, or contains only invalid theme
 rows, the app falls back to built-in themes and remains usable.
 
-Built-in themes include `Dark`, `Light`, `Ocean`, `Dreamy`, `Forest`, and `Nord`.
+Built-in themes include `Dreamy`, `Sandstone`, and `Nord`.
 
 ## Navigation
 
@@ -225,14 +225,21 @@ sudo pacman -S python python-pip
 cd ExpendiTUI
 python -m venv .venv
 source .venv/bin/activate
-pip install -e .[dev]
+pip install -e ".[dev]"
 recurring-expenses-tui
 ```
 
 ## Development
 
-Run the test suite with:
+Run the same checks locally that CI runs:
 
 ```bash
+black --check .
 pytest
+```
+
+To apply formatting locally before committing, run:
+
+```bash
+black .
 ```

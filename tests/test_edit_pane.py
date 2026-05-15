@@ -4,7 +4,12 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 from recurring_expenses_tui.models import ExpenseEntry, Frequency
-from recurring_expenses_tui.screens.edit import DraftExpense, EditMode, EditPane, ExpenseForm
+from recurring_expenses_tui.screens.edit import (
+    DraftExpense,
+    EditMode,
+    EditPane,
+    ExpenseForm,
+)
 from recurring_expenses_tui.theme import AppTheme
 
 
