@@ -151,11 +151,12 @@ Example:
 
 ## Navigation
 
-ExpendiTUI has three visible tabs:
+ExpendiTUI has four visible tabs:
 
 - `Overview` shows all saved expense and income entries with monthly and yearly totals and savings.
 - `Edit` uses a modal workflow for create, edit, and delete operations.
-- `Help` lists the available keyboard shortcuts.
+- `Help` shows the available keyboard shortcuts in a structured guide.
+- `Settings` is reserved for future configuration options.
 
 Use `o`, `h`, and `e` to open Overview, Help, and Edit directly. The active tab
 is highlighted by Textual's tab widget.

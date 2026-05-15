@@ -6,6 +6,7 @@ from expenditui.app import (
     EDIT_TAB,
     HELP_TAB,
     OVERVIEW_TAB,
+    SETTINGS_TAB,
     ExpendiTUIApp,
 )
 
@@ -16,6 +17,9 @@ def test_bindings_expose_direct_tab_navigation_without_legacy_edit_actions() -> 
     assert bindings["o"] == "show_overview"
     assert bindings["h"] == "show_help"
     assert bindings["e"] == "show_edit"
+    assert bindings["s"] == "show_settings"
+    assert bindings["pageup"] == "scroll_active_page_up"
+    assert bindings["pagedown"] == "scroll_active_page_down"
     assert bindings["r"] == "reload"
     assert bindings["t"] == "cycle_theme"
     assert bindings["escape"] == "back"
@@ -43,9 +47,10 @@ def test_direct_navigation_actions_switch_to_expected_tabs(monkeypatch) -> None:
 
     app.action_show_edit()
     app.action_show_help()
+    app.action_show_settings()
     app.action_show_overview()
 
-    assert switched_tabs == [EDIT_TAB, HELP_TAB]
+    assert switched_tabs == [EDIT_TAB, HELP_TAB, SETTINGS_TAB]
     assert overview_calls == 1
 
 
@@ -75,16 +80,31 @@ def test_direct_tab_actions_are_hidden_only_for_active_tab() -> None:
     assert app.check_action("show_overview", ()) is False
     assert app.check_action("show_edit", ()) is True
     assert app.check_action("show_help", ()) is True
+    assert app.check_action("scroll_active_page_up", ()) is True
+    assert app.check_action("scroll_active_page_down", ()) is True
 
     app.active_tab_id = EDIT_TAB
     assert app.check_action("show_overview", ()) is True
     assert app.check_action("show_edit", ()) is False
     assert app.check_action("show_help", ()) is True
+    assert app.check_action("scroll_active_page_up", ()) is True
+    assert app.check_action("scroll_active_page_down", ()) is True
 
     app.active_tab_id = HELP_TAB
     assert app.check_action("show_overview", ()) is True
     assert app.check_action("show_edit", ()) is True
     assert app.check_action("show_help", ()) is False
+    assert app.check_action("scroll_active_page_up", ()) is True
+    assert app.check_action("scroll_active_page_down", ()) is True
+
+    app.active_tab_id = SETTINGS_TAB
+    assert app.check_action("show_overview", ()) is True
+    assert app.check_action("show_edit", ()) is True
+    assert app.check_action("show_help", ()) is True
+    assert app.check_action("show_settings", ()) is False
+    assert app.check_action("scroll_active_page_up", ()) is False
+    assert app.check_action("scroll_active_page_down", ()) is False
+    assert app.check_action("back", ()) is True
 
 
 def test_modal_edit_blocks_global_navigation_actions(monkeypatch) -> None:
@@ -95,6 +115,9 @@ def test_modal_edit_blocks_global_navigation_actions(monkeypatch) -> None:
 
     assert app.check_action("show_overview", ()) is False
     assert app.check_action("show_help", ()) is False
+    assert app.check_action("show_settings", ()) is False
+    assert app.check_action("scroll_active_page_up", ()) is False
+    assert app.check_action("scroll_active_page_down", ()) is False
     assert app.check_action("reload", ()) is False
     assert app.check_action("back", ()) is False
 
@@ -133,10 +156,8 @@ def test_tab_activation_stays_on_edit_when_modal_state_blocks_navigation(
 def test_tab_activation_refreshes_destination_view_and_bindings(monkeypatch) -> None:
     app = ExpendiTUIApp()
     overview = SimpleNamespace(refresh_view=lambda: overview_calls.append("overview"))
-    edit = SimpleNamespace(focus_table=lambda: edit_calls.append("edit"))
     tabs = SimpleNamespace(active=None)
     overview_calls: list[str] = []
-    edit_calls: list[str] = []
     bindings_calls: list[str] = []
 
     def fake_query_one(selector, *_args):
@@ -144,8 +165,6 @@ def test_tab_activation_refreshes_destination_view_and_bindings(monkeypatch) -> 
             return tabs
         if hasattr(selector, "__name__") and selector.__name__ == "OverviewPane":
             return overview
-        if hasattr(selector, "__name__") and selector.__name__ == "EditPane":
-            return edit
         raise AssertionError(f"Unexpected selector: {selector!r}")
 
     monkeypatch.setattr(app, "query_one", fake_query_one)
@@ -157,7 +176,6 @@ def test_tab_activation_refreshes_destination_view_and_bindings(monkeypatch) -> 
     app.on_tabbed_content_tab_activated(SimpleNamespace(pane=SimpleNamespace(id=EDIT_TAB)))  # type: ignore[arg-type]
 
     assert overview_calls == ["overview"]
-    assert edit_calls == ["edit"]
     assert bindings_calls == [OVERVIEW_TAB, EDIT_TAB]
 
 
@@ -180,3 +198,52 @@ def test_cycle_theme_action_updates_theme_and_refreshes_views(monkeypatch) -> No
     app.action_cycle_theme()
 
     assert calls == ["cycle", "apply:True", "refresh:False", "bindings"]
+
+
+def test_active_page_scroll_actions_target_active_tab(monkeypatch) -> None:
+    app = ExpendiTUIApp()
+    calls: list[str] = []
+    overview = SimpleNamespace(
+        page_up=lambda: calls.append("overview:up"),
+        page_down=lambda: calls.append("overview:down"),
+    )
+    edit = SimpleNamespace(
+        page_up=lambda: calls.append("edit:up"),
+        page_down=lambda: calls.append("edit:down"),
+    )
+    help_pane = SimpleNamespace(
+        scroll_page_up=lambda **kwargs: calls.append(f"up:{kwargs}"),
+        scroll_page_down=lambda **kwargs: calls.append(f"down:{kwargs}"),
+    )
+
+    def fake_query_one(selector, *_args):
+        if hasattr(selector, "__name__") and selector.__name__ == "OverviewPane":
+            return overview
+        if hasattr(selector, "__name__") and selector.__name__ == "EditPane":
+            return edit
+        if hasattr(selector, "__name__") and selector.__name__ == "HelpPane":
+            return help_pane
+        raise AssertionError(f"Unexpected selector: {selector!r}")
+
+    monkeypatch.setattr(app, "query_one", fake_query_one)
+
+    app.active_tab_id = OVERVIEW_TAB
+    app.action_scroll_active_page_up()
+    app.action_scroll_active_page_down()
+
+    app.active_tab_id = EDIT_TAB
+    app.action_scroll_active_page_up()
+    app.action_scroll_active_page_down()
+
+    app.active_tab_id = HELP_TAB
+    app.action_scroll_active_page_up()
+    app.action_scroll_active_page_down()
+
+    assert calls == [
+        "overview:up",
+        "overview:down",
+        "edit:up",
+        "edit:down",
+        "up:{'animate': False}",
+        "down:{'animate': False}",
+    ]
