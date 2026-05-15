@@ -16,8 +16,11 @@ from .storage import (
     get_expenses_path,
     get_income_path,
     load_entries,
+    load_tag_registry,
     save_entries,
+    save_tag_registry,
 )
+from .tags import TagRegistry
 from .theme import AppTheme, ThemeManager
 
 OVERVIEW_TAB = "overview-tab"
@@ -67,6 +70,7 @@ class ExpendiTUIApp(App[None]):
         super().__init__()
         self.expenses: dict[str, FinancialEntry] = {}
         self.income: dict[str, FinancialEntry] = {}
+        self.tag_registry = TagRegistry()
         self.last_error: str | None = None
         self.status_message: str | None = None
         self.status_message_kind = "success"
@@ -150,6 +154,19 @@ class ExpendiTUIApp(App[None]):
                 self.set_entries(entry_type, {})
                 diagnostics.append(str(exc))
 
+        tag_result = load_tag_registry()
+        tag_registry = tag_result.registry
+        entry_tags = self._collect_all_tags()
+        tag_registry_changed = tag_registry.extend(entry_tags)
+        if tag_result.diagnostics:
+            diagnostics.extend(tag_result.diagnostics)
+        if tag_result.needs_save or tag_registry_changed:
+            try:
+                save_tag_registry(tag_registry)
+            except StorageError as exc:
+                diagnostics.append(str(exc))
+        self.tag_registry = tag_registry
+
         self.last_error = " | ".join(diagnostics) if diagnostics else None
         if loaded_any:
             self.status_message = "Loaded expense and income entries."
@@ -161,9 +178,15 @@ class ExpendiTUIApp(App[None]):
     def save_state(
         self, entry_type: EntryType, data: dict[str, FinancialEntry]
     ) -> str | None:
+        updated_tag_registry = self.tag_registry.copy()
+        updated_tag_registry.extend(self._collect_tags(data.values()))
         try:
+            if updated_tag_registry.to_list() != self.tag_registry.to_list():
+                save_tag_registry(updated_tag_registry)
+                self.tag_registry = updated_tag_registry
             save_entries(entry_type, data)
             self.set_entries(entry_type, load_entries(entry_type).entries)
+            self.tag_registry = updated_tag_registry
             self.last_error = None
             self.status_message = (
                 f"Saved {entry_type.plural_name} to {get_dataset_path(entry_type)}."
@@ -176,6 +199,22 @@ class ExpendiTUIApp(App[None]):
 
     def get_entries(self, entry_type: EntryType) -> dict[str, FinancialEntry]:
         return self.expenses if entry_type is EntryType.EXPENSE else self.income
+
+    def get_tag_registry(self) -> TagRegistry:
+        return self.tag_registry
+
+    def ensure_global_tag(self, raw_tag: str) -> tuple[str | None, str | None]:
+        updated_registry = self.tag_registry.copy()
+        try:
+            canonical_tag, _changed = updated_registry.add(raw_tag)
+            if updated_registry.to_list() != self.tag_registry.to_list():
+                save_tag_registry(updated_registry)
+            self.tag_registry = updated_registry
+        except (StorageError, ValueError) as exc:
+            self.last_error = str(exc)
+            self.status_message = None
+            return None, self.last_error
+        return canonical_tag, None
 
     def set_entries(
         self, entry_type: EntryType, entries: dict[str, FinancialEntry]
@@ -194,6 +233,18 @@ class ExpendiTUIApp(App[None]):
             edit_pane.refresh_theme_state()
 
         self.refresh_message_area()
+
+    def _collect_all_tags(self) -> list[str]:
+        tags: list[str] = []
+        tags.extend(self._collect_tags(self.expenses.values()))
+        tags.extend(self._collect_tags(self.income.values()))
+        return tags
+
+    def _collect_tags(self, entries) -> list[str]:
+        tags: list[str] = []
+        for entry in entries:
+            tags.extend(entry.tags)
+        return tags
 
     def switch_to_tab(self, tab_id: str) -> None:
         self.active_tab_id = tab_id

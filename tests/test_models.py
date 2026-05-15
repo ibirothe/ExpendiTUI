@@ -1,5 +1,6 @@
 import pytest
 
+from expenditui.constants import MAX_TAG_LENGTH, MAX_TAGS
 from expenditui.models import ExpenseCollection, ExpenseEntry
 
 
@@ -45,7 +46,23 @@ def test_blank_and_excessive_tags_are_rejected() -> None:
         ExpenseEntry(amount="10.00", frequency="monthly", tags=["", "home"])
 
     with pytest.raises(Exception):
-        ExpenseEntry(amount="10.00", frequency="monthly", tags=["x" * 33])
+        ExpenseEntry(
+            amount="10.00",
+            frequency="monthly",
+            tags=["x" * (MAX_TAG_LENGTH + 1)],
+        )
+
+
+def test_control_characters_and_excess_tag_count_are_rejected() -> None:
+    with pytest.raises(Exception):
+        ExpenseEntry(amount="10.00", frequency="monthly", tags=["Food\nTruck"])
+
+    with pytest.raises(Exception):
+        ExpenseEntry(
+            amount="10.00",
+            frequency="monthly",
+            tags=[f"Tag {index}" for index in range(MAX_TAGS + 1)],
+        )
 
 
 def test_duplicate_tags_are_normalized() -> None:

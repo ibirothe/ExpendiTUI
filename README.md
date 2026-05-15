@@ -147,8 +147,10 @@ is highlighted by Textual's tab widget.
 - `a` / `A` open create mode in Edit
 - `e` / `E` open edit mode for the selected row in Edit
 - `d` / `D` open delete confirmation for the selected row in Edit
-- `tab` / `shift+tab` move between fields while creating or editing
-- `enter` advance fields and submit from the final field while creating or editing
+- `tab` / `shift+tab` move between fields, or accept the highlighted tag suggestion
+- `up` / `down` move through tag suggestions while editing tags
+- `enter` advance fields, add or create tags, and submit from an empty tag field
+- `backspace` remove the last attached tag when the tag input is empty
 - `y` / `n` confirm or cancel deletion in Edit
 - `esc` cancel the active Edit modal, or return to Overview from Edit or Help
 
@@ -176,7 +178,8 @@ Each data file uses this shape:
 
 Amounts must be non-negative and use at most two decimal places. Entry names
 must be non-empty strings. Tags are optional, stored as string arrays, limited
-to 10 values per entry, and each tag must be non-empty after trimming.
+to 64 values per entry, case-insensitively unique, and each tag must be
+non-empty after trimming.
 
 Supported frequencies are:
 

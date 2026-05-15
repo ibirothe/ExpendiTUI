@@ -15,11 +15,11 @@ from pydantic import (
 )
 
 from .constants import (
-    MAX_TAG_LENGTH,
     MAX_TAGS,
     MONEY_PLACES,
     ROUNDING_MODE,
 )
+from .tags import normalize_tag_key, validate_tag
 
 
 class Frequency(str, Enum):
@@ -91,16 +91,8 @@ class FinancialEntry(BaseModel):
         normalized: list[str] = []
         seen: set[str] = set()
         for raw_tag in value:
-            if not isinstance(raw_tag, str):
-                raise ValueError("Each tag must be a string.")
-            tag = raw_tag.strip()
-            if not tag:
-                raise ValueError("Tags must be non-empty strings.")
-            if len(tag) > MAX_TAG_LENGTH:
-                raise ValueError(
-                    f"Tags must be at most {MAX_TAG_LENGTH} characters long."
-                )
-            tag_key = tag.casefold()
+            tag = validate_tag(raw_tag)
+            tag_key = normalize_tag_key(tag)
             if tag_key in seen:
                 continue
             seen.add(tag_key)
