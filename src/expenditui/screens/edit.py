@@ -690,7 +690,10 @@ class EditPane(Vertical):
         dialog = self.query_one("#delete-confirm", ConfirmDialog)
 
         form.set_class(self.mode not in {EditMode.CREATE, EditMode.EDIT}, "hidden")
-        dialog.set_class(self.mode is not EditMode.CONFIRM_DELETE, "hidden")
+        dialog_hidden = self.mode is not EditMode.CONFIRM_DELETE
+        dialog.set_class(dialog_hidden, "hidden")
+        if dialog_hidden:
+            dialog.update("")
 
         dataset_name = (
             self.active_dataset.plural_name.title()

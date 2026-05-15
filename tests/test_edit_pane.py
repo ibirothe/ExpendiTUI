@@ -534,6 +534,7 @@ def test_keyboard_shortcuts_drive_modal_entry_and_field_navigation() -> None:
 def test_delete_confirmation_requires_explicit_choice_and_updates_selection() -> None:
     pane, app = build_pane()
     table = pane.query_one("#edit-table")
+    dialog = pane.query_one("#delete-confirm")
     pane.current_index = 1
 
     pane.start_delete_confirmation()
@@ -541,12 +542,14 @@ def test_delete_confirmation_requires_explicit_choice_and_updates_selection() ->
     assert pane.mode is EditMode.CONFIRM_DELETE
     assert not pane.query_one("#delete-confirm").has_class("hidden")
     assert "DELETE" in str(table.rows[1][0])
+    assert dialog.renderable == "Delete this entry? (y/n)"
 
     pane.on_key(FakeKeyEvent("n"))
 
     assert pane.mode is EditMode.NAVIGATION
     assert list(app.expenses) == ["rent", "insurance"]
     assert pane.selected_name == "insurance"
+    assert dialog.renderable == ""
 
     pane.start_delete_confirmation()
     pane.on_key(FakeKeyEvent("y"))
@@ -555,6 +558,7 @@ def test_delete_confirmation_requires_explicit_choice_and_updates_selection() ->
     assert list(app.expenses) == ["rent"]
     assert pane.selected_name == "rent"
     assert app.focused is table
+    assert dialog.renderable == ""
 
 
 def test_delete_confirmation_escape_cancels_without_mutating_entries() -> None:
