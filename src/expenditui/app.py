@@ -24,14 +24,14 @@ OVERVIEW_TAB = "overview-tab"
 EDIT_TAB = "edit-tab"
 HELP_TAB = "help-tab"
 THEME_NOTICE_SECONDS = 2.0
-THEME_CSS_SOURCE = ("runtime-theme.css", "RecurringExpensesApp.RUNTIME_THEME_CSS")
+THEME_CSS_SOURCE = ("runtime-theme.css", "ExpendiTUIApp.RUNTIME_THEME_CSS")
 
 
-class RecurringExpensesApp(App[None]):
+class ExpendiTUIApp(App[None]):
     TITLE = APP_TITLE
     BINDINGS = [
         Binding("q", "quit", "Quit", priority=True),
-        Binding("r", "reload", "Reload JSON", priority=True),
+        Binding("r", "reload", "Reload Data", priority=True),
         Binding("o", "show_overview", "Overview"),
         Binding("e", "show_edit", "Edit"),
         Binding("h", "show_help", "Help"),
@@ -152,7 +152,7 @@ class RecurringExpensesApp(App[None]):
 
         self.last_error = " | ".join(diagnostics) if diagnostics else None
         if loaded_any:
-            self.status_message = "Loaded recurring expenses and income."
+            self.status_message = "Loaded expense and income entries."
             self.status_message_kind = "success"
         else:
             self.status_message = None
@@ -543,4 +543,4 @@ class RecurringExpensesApp(App[None]):
 
 
 def main() -> None:
-    RecurringExpensesApp().run()
+    ExpendiTUIApp().run()

@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 import logging
 
-from recurring_expenses_tui.app import RecurringExpensesApp
-from recurring_expenses_tui.theme import AppTheme, BUILTIN_THEME_ROWS, ThemeManager
+from expenditui.app import ExpendiTUIApp
+from expenditui.theme import AppTheme, BUILTIN_THEME_ROWS, ThemeManager
 from textual.css.stylesheet import Stylesheet
 
 
@@ -130,7 +130,7 @@ def test_theme_blend_returns_stable_hex_color() -> None:
 
 
 def test_app_build_theme_css_covers_component_styles() -> None:
-    app = RecurringExpensesApp()
+    app = ExpendiTUIApp()
 
     css = app._build_theme_css(app.active_theme)
 
@@ -141,7 +141,7 @@ def test_app_build_theme_css_covers_component_styles() -> None:
 
 
 def test_app_build_theme_css_parses_with_textual() -> None:
-    app = RecurringExpensesApp()
+    app = ExpendiTUIApp()
     stylesheet = Stylesheet()
     stylesheet.add_source(
         app._build_theme_css(app.active_theme), read_from=("test.css", "theme")

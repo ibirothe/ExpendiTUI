@@ -2,17 +2,17 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from recurring_expenses_tui.app import (
+from expenditui.app import (
     EDIT_TAB,
     HELP_TAB,
     OVERVIEW_TAB,
-    RecurringExpensesApp,
+    ExpendiTUIApp,
 )
 
 
 def test_bindings_expose_direct_tab_navigation_without_legacy_edit_actions() -> None:
     bindings = {
-        binding.key: binding.action for binding in RecurringExpensesApp.BINDINGS
+        binding.key: binding.action for binding in ExpendiTUIApp.BINDINGS
     }
 
     assert bindings["o"] == "show_overview"
@@ -29,7 +29,7 @@ def test_bindings_expose_direct_tab_navigation_without_legacy_edit_actions() -> 
 
 
 def test_direct_navigation_actions_switch_to_expected_tabs(monkeypatch) -> None:
-    app = RecurringExpensesApp()
+    app = ExpendiTUIApp()
     switched_tabs: list[str] = []
     overview_calls = 0
 
@@ -52,7 +52,7 @@ def test_direct_navigation_actions_switch_to_expected_tabs(monkeypatch) -> None:
 
 
 def test_direct_tab_actions_are_hidden_only_for_active_tab() -> None:
-    app = RecurringExpensesApp()
+    app = ExpendiTUIApp()
 
     app.active_tab_id = OVERVIEW_TAB
     assert app.check_action("show_overview", ()) is False
@@ -71,7 +71,7 @@ def test_direct_tab_actions_are_hidden_only_for_active_tab() -> None:
 
 
 def test_modal_edit_blocks_global_navigation_actions(monkeypatch) -> None:
-    app = RecurringExpensesApp()
+    app = ExpendiTUIApp()
     app.active_tab_id = EDIT_TAB
 
     monkeypatch.setattr(app, "edit_mode_blocks_global_actions", lambda: True)
@@ -83,7 +83,7 @@ def test_modal_edit_blocks_global_navigation_actions(monkeypatch) -> None:
 
 
 def test_cycle_theme_action_respects_edit_form_blocking(monkeypatch) -> None:
-    app = RecurringExpensesApp()
+    app = ExpendiTUIApp()
 
     monkeypatch.setattr(app, "theme_switch_blocks_global_actions", lambda: True)
     assert app.check_action("cycle_theme", ()) is False
@@ -95,7 +95,7 @@ def test_cycle_theme_action_respects_edit_form_blocking(monkeypatch) -> None:
 def test_tab_activation_stays_on_edit_when_modal_state_blocks_navigation(
     monkeypatch,
 ) -> None:
-    app = RecurringExpensesApp()
+    app = ExpendiTUIApp()
     tabs = SimpleNamespace(active=EDIT_TAB)
     app.active_tab_id = EDIT_TAB
 
@@ -114,7 +114,7 @@ def test_tab_activation_stays_on_edit_when_modal_state_blocks_navigation(
 
 
 def test_tab_activation_refreshes_destination_view_and_bindings(monkeypatch) -> None:
-    app = RecurringExpensesApp()
+    app = ExpendiTUIApp()
     overview = SimpleNamespace(refresh_view=lambda: overview_calls.append("overview"))
     edit = SimpleNamespace(focus_table=lambda: edit_calls.append("edit"))
     tabs = SimpleNamespace(active=None)
@@ -145,7 +145,7 @@ def test_tab_activation_refreshes_destination_view_and_bindings(monkeypatch) -> 
 
 
 def test_cycle_theme_action_updates_theme_and_refreshes_views(monkeypatch) -> None:
-    app = RecurringExpensesApp()
+    app = ExpendiTUIApp()
     calls: list[str] = []
 
     monkeypatch.setattr(app, "theme_switch_blocks_global_actions", lambda: False)

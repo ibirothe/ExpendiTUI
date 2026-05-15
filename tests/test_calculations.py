@@ -1,13 +1,13 @@
 from decimal import Decimal
 
-from recurring_expenses_tui.calculations import (
+from expenditui.calculations import (
     monthly_equivalent,
     savings_monthly,
     savings_yearly,
     total_monthly,
     total_yearly,
 )
-from recurring_expenses_tui.models import ExpenseEntry, Frequency
+from expenditui.models import ExpenseEntry, Frequency
 
 
 def test_frequency_conversion() -> None:

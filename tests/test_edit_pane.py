@@ -3,14 +3,14 @@ from __future__ import annotations
 from decimal import Decimal
 from types import SimpleNamespace
 
-from recurring_expenses_tui.models import EntryType, ExpenseEntry, Frequency
-from recurring_expenses_tui.screens.edit import (
-    DraftExpense,
+from expenditui.models import EntryType, ExpenseEntry, Frequency
+from expenditui.screens.edit import (
+    DraftEntry,
     EditMode,
     EditPane,
-    ExpenseForm,
+    EntryForm,
 )
-from recurring_expenses_tui.theme import AppTheme
+from expenditui.theme import AppTheme
 
 
 class FakeKeyEvent:
@@ -51,14 +51,14 @@ class FakeForm:
     def query_one(self, selector: str, _cls: object | None = None) -> FakeInput:
         return self.inputs[selector]
 
-    def set_draft(self, draft: DraftExpense) -> None:
+    def set_draft(self, draft: DraftEntry) -> None:
         self.inputs["#name-input"].value = draft.name
         self.inputs["#amount-input"].value = draft.amount
         self.inputs["#frequency-input"].value = draft.frequency
         self.inputs["#tags-input"].value = draft.tags
 
-    def get_draft(self) -> DraftExpense:
-        return DraftExpense(
+    def get_draft(self) -> DraftEntry:
+        return DraftEntry(
             name=self.inputs["#name-input"].value,
             amount=self.inputs["#amount-input"].value,
             frequency=self.inputs["#frequency-input"].value,
@@ -220,7 +220,7 @@ class StubEditPane(EditPane):
             "#edit-table": FakeTable(app),
             "#delete-confirm": FakeDialog(app),
             "#edit-message": FakeStatic(app),
-            ExpenseForm: FakeForm(app),
+            EntryForm: FakeForm(app),
         }
         super().__init__()
 
@@ -269,7 +269,7 @@ def test_navigation_mode_hides_form_and_supports_jk_navigation() -> None:
     assert pane.mode is EditMode.NAVIGATION
     assert pane.active_dataset is EntryType.EXPENSE
     assert pane.current_index == 0
-    assert pane.query_one(ExpenseForm).has_class("hidden")
+    assert pane.query_one(EntryForm).has_class("hidden")
     assert app.focused is table
 
     pane.on_key(FakeKeyEvent("j"))
@@ -289,7 +289,7 @@ def test_dataset_toggle_switches_rows_and_preserves_selection() -> None:
 
     assert pane.active_dataset is EntryType.INCOME
     assert [entry.name for entry in pane.entries] == ["salary"]
-    assert pane.query_one("#edit-message").renderable == "Showing recurring income."
+    assert pane.query_one("#edit-message").renderable == "Showing income."
 
     pane.on_key(FakeKeyEvent("i"))
 
@@ -302,7 +302,7 @@ def test_create_flow_inserts_below_selection_and_selects_new_entry() -> None:
     table = pane.query_one("#edit-table")
 
     pane.start_create()
-    form = pane.query_one(ExpenseForm)
+    form = pane.query_one(EntryForm)
     form.query_one("#name-input").value = "utilities"
     form.query_one("#amount-input").value = "49.99"
     form.query_one("#tags-input").value = "Home, Bills"
@@ -321,7 +321,7 @@ def test_create_validation_failure_keeps_form_open() -> None:
     pane, app = build_pane()
 
     pane.start_create()
-    form = pane.query_one(ExpenseForm)
+    form = pane.query_one(EntryForm)
     form.query_one("#amount-input").value = "10.00"
     form.query_one("#tags-input").value = "Work,,Salary"
     pane.submit_form()
@@ -333,7 +333,7 @@ def test_create_validation_failure_keeps_form_open() -> None:
 
 def test_create_duplicate_name_and_save_failure_keep_modal_open() -> None:
     pane, app = build_pane()
-    form = pane.query_one(ExpenseForm)
+    form = pane.query_one(EntryForm)
 
     pane.start_create()
     form.query_one("#name-input").value = "rent"
@@ -359,7 +359,7 @@ def test_edit_flow_supports_cancel_and_submit() -> None:
     table = pane.query_one("#edit-table")
 
     pane.start_edit()
-    form = pane.query_one(ExpenseForm)
+    form = pane.query_one(EntryForm)
 
     assert pane.mode is EditMode.EDIT
     assert form.query_one("#name-input").value == "rent"
@@ -389,7 +389,7 @@ def test_create_and_delete_work_in_income_mode() -> None:
     pane.toggle_dataset()
 
     pane.start_create()
-    form = pane.query_one(ExpenseForm)
+    form = pane.query_one(EntryForm)
     form.query_one("#name-input").value = "bonus"
     form.query_one("#amount-input").value = "500.00"
     form.query_one("#frequency-input").value = "annual"
@@ -409,7 +409,7 @@ def test_create_and_delete_work_in_income_mode() -> None:
 def test_keyboard_shortcuts_drive_modal_entry_and_field_navigation() -> None:
     pane, app = build_pane()
     table = pane.query_one("#edit-table")
-    form = pane.query_one(ExpenseForm)
+    form = pane.query_one(EntryForm)
 
     add_event = FakeKeyEvent("a")
     pane.on_key(add_event)
@@ -494,7 +494,7 @@ def test_delete_confirmation_escape_cancels_without_mutating_entries() -> None:
 def test_submitted_input_advances_fields_and_final_submit_persists() -> None:
     pane, app = build_pane()
     pane.start_create()
-    form = pane.query_one(ExpenseForm)
+    form = pane.query_one(EntryForm)
 
     name_input = form.query_one("#name-input")
     amount_input = form.query_one("#amount-input")

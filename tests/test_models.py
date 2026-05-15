@@ -1,6 +1,6 @@
 import pytest
 
-from recurring_expenses_tui.models import ExpenseCollection, ExpenseEntry
+from expenditui.models import ExpenseCollection, ExpenseEntry
 
 
 def test_valid_model_parsing_with_tags() -> None:

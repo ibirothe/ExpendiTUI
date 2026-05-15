@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from decimal import Decimal, ROUND_HALF_UP
 
-APP_NAME = "recurring-expenses-tui"
-APP_TITLE = "Recurring Finance TUI"
+APP_NAME = "expenditui"
+APP_TITLE = "ExpendiTUI"
 EXPENSES_FILENAME = "expenses.json"
 INCOME_FILENAME = "income.json"
 EMPTY_JSON_OBJECT = "{}\n"

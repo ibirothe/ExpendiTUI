@@ -16,7 +16,7 @@ from ..theme import AppTheme
 
 
 @dataclass
-class DraftExpense:
+class DraftEntry:
     name: str
     amount: str
     frequency: str
@@ -34,7 +34,7 @@ class ConfirmDialog(Static, can_focus=True):
     pass
 
 
-class ExpenseForm(Vertical):
+class EntryForm(Vertical):
     def compose(self) -> ComposeResult:
         yield Label("Name", classes="field-label")
         yield Input(placeholder="Entry name", id="name-input")
@@ -45,14 +45,14 @@ class ExpenseForm(Vertical):
         yield Label("Tags", classes="field-label")
         yield Input(placeholder="Optional, comma-separated", id="tags-input")
 
-    def set_draft(self, draft: DraftExpense) -> None:
+    def set_draft(self, draft: DraftEntry) -> None:
         self.query_one("#name-input", Input).value = draft.name
         self.query_one("#amount-input", Input).value = draft.amount
         self.query_one("#frequency-input", Input).value = draft.frequency
         self.query_one("#tags-input", Input).value = draft.tags
 
-    def get_draft(self) -> DraftExpense:
-        return DraftExpense(
+    def get_draft(self) -> DraftEntry:
+        return DraftEntry(
             name=self.query_one("#name-input", Input).value,
             amount=self.query_one("#amount-input", Input).value,
             frequency=self.query_one("#frequency-input", Input).value,
@@ -139,7 +139,7 @@ class EditPane(Vertical):
 
     def __init__(self) -> None:
         super().__init__()
-        self.entries: list[DraftExpense] = []
+        self.entries: list[DraftEntry] = []
         self.current_index = 0
         self.mode = EditMode.NAVIGATION
         self.active_dataset = EntryType.EXPENSE
@@ -155,7 +155,7 @@ class EditPane(Vertical):
         yield Static(id="edit-title")
         with Horizontal(id="edit-body"):
             yield DataTable(id="edit-table")
-            yield ExpenseForm(id="edit-form", classes="hidden")
+            yield EntryForm(id="edit-form", classes="hidden")
         yield ConfirmDialog(id="delete-confirm", classes="hidden")
         yield Static(id="edit-message")
 
@@ -185,7 +185,7 @@ class EditPane(Vertical):
             else self.selection_by_dataset[self.active_dataset]
         )
         self.entries = [
-            DraftExpense(
+            DraftEntry(
                 name=name,
                 amount=f"{entry.amount:.2f}",
                 frequency=entry.frequency.value,
@@ -256,7 +256,7 @@ class EditPane(Vertical):
         self.load_from_app()
         self.focus_table()
         self.set_message(
-            f"Showing recurring {self.active_dataset.plural_name}.",
+            f"Showing {self.active_dataset.plural_name}.",
             kind="accent",
         )
 
@@ -265,7 +265,7 @@ class EditPane(Vertical):
         self.modal_target_index = self.current_index + 1 if self.entries else 0
         self.mode = EditMode.CREATE
         self._show_form(
-            DraftExpense(name="", amount="", frequency=DEFAULT_FREQUENCY, tags="")
+            DraftEntry(name="", amount="", frequency=DEFAULT_FREQUENCY, tags="")
         )
         self.set_message("")
 
@@ -279,7 +279,7 @@ class EditPane(Vertical):
         self.mode = EditMode.EDIT
         self.refresh_table()
         self._show_form(
-            DraftExpense(
+            DraftEntry(
                 name=current.name,
                 amount=current.amount,
                 frequency=current.frequency,
@@ -319,7 +319,7 @@ class EditPane(Vertical):
             return
 
         updated_entries = list(self.entries)
-        draft = self.query_one(ExpenseForm).get_draft()
+        draft = self.query_one(EntryForm).get_draft()
         target_index = self.modal_target_index or 0
         operation = self.mode
 
@@ -379,7 +379,7 @@ class EditPane(Vertical):
         )
 
     def validate_entries(
-        self, entries: list[DraftExpense]
+        self, entries: list[DraftEntry]
     ) -> tuple[dict[str, FinancialEntry], list[str]]:
         validated: dict[str, FinancialEntry] = {}
         seen_names: set[str] = set()
@@ -437,10 +437,10 @@ class EditPane(Vertical):
         if self.mode not in {EditMode.CREATE, EditMode.EDIT}:
             return
         event.stop()
-        if self.query_one(ExpenseForm).is_final_field(event.input):
+        if self.query_one(EntryForm).is_final_field(event.input):
             self.submit_form()
         else:
-            self.query_one(ExpenseForm).focus_next_field()
+            self.query_one(EntryForm).focus_next_field()
 
     def on_key(self, event: events.Key) -> None:
         if self.mode is EditMode.NAVIGATION:
@@ -460,13 +460,13 @@ class EditPane(Vertical):
         if event.key == "tab":
             event.stop()
             event.prevent_default()
-            self.query_one(ExpenseForm).focus_next_field()
+            self.query_one(EntryForm).focus_next_field()
             return
 
         if event.key == "shift+tab":
             event.stop()
             event.prevent_default()
-            self.query_one(ExpenseForm).focus_previous_field()
+            self.query_one(EntryForm).focus_previous_field()
 
     def _handle_navigation_key(self, event: events.Key) -> None:
         character = (event.character or "").lower()
@@ -509,15 +509,15 @@ class EditPane(Vertical):
         elif character == "n" or event.key == "escape":
             self.cancel_modal()
 
-    def _show_form(self, draft: DraftExpense) -> None:
-        form = self.query_one(ExpenseForm)
+    def _show_form(self, draft: DraftEntry) -> None:
+        form = self.query_one(EntryForm)
         form.set_draft(draft)
         self._update_mode_ui()
         form.focus_first_field()
 
     def _update_mode_ui(self) -> None:
         title = self.query_one("#edit-title", Static)
-        form = self.query_one(ExpenseForm)
+        form = self.query_one(EntryForm)
         dialog = self.query_one("#delete-confirm", ConfirmDialog)
 
         form.set_class(self.mode not in {EditMode.CREATE, EditMode.EDIT}, "hidden")
@@ -561,7 +561,7 @@ class EditPane(Vertical):
             self.selection_by_dataset[self.active_dataset] = self.selected_name
 
     def _render_row(
-        self, index: int, entry: DraftExpense
+        self, index: int, entry: DraftEntry
     ) -> tuple[Text | str, Text | str, Text | str, Text | str]:
         tag: str | None = None
         accent_slot = "accent"
@@ -606,7 +606,7 @@ class EditPane(Vertical):
             background=theme.surface,
             color=theme.foreground,
         )
-        form = self.query_one(ExpenseForm)
+        form = self.query_one(EntryForm)
         form.styles.background = theme.surface
         form.styles.color = theme.foreground
         form.styles.border_left = ("solid", theme.muted)
