@@ -132,7 +132,8 @@ Built-in themes include `Dreamy`, `Sandstone`, and `Nord`.
 
 If `visualizations.json` is missing, malformed, or contains unsupported values,
 the app falls back to a safe default `income_vs_expense` bar comparison and
-remains usable.
+remains usable. If the file exists but is empty or contains only `{}`, the
+overview visualization section is hidden entirely.
 
 Example:
 
@@ -141,32 +142,37 @@ Example:
   "overview": {
     "enabled": true,
     "type": "income_vs_expense",
+    "entryType": "both",
     "maxWidth": 20,
-    "incomeSymbol": "█",
-    "expenseSymbol": "█",
+    "incomeSymbol": "🟪",
+    "expenseSymbol": "🟧",
     "showLabels": true
   }
 }
 ```
 
-Tag-based expenditure distribution can be enabled with theme-colored text
-segments:
+Tag-based expenditure distribution can be enabled with high-contrast colored
+square emoji buckets:
 
 ```json
 {
   "overview": {
     "enabled": true,
     "type": "tag_distribution",
+    "entryType": "expense",
     "groupBy": "tags",
     "maxWidth": 24,
     "othersThreshold": 0.05,
     "maxLegendEntries": 6,
-    "segmentSymbol": "▮",
-    "tagColorSlots": ["warning", "accent", "success", "error", "foreground"],
-    "othersColorSlot": "muted"
+    "tagSymbols": ["🟧", "🟪", "🟨", "🟦", "🟫"],
+    "othersSymbol": "⬜"
   }
 }
 ```
+
+Use `"entryType": "income"`, `"expense"`, or `"both"` to control which saved
+entry types feed a visualization. If omitted, `income_vs_expense` shows both,
+while `tag_distribution` keeps its expense-focused default.
 
 ## Navigation
 

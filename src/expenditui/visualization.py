@@ -16,7 +16,6 @@ from .calculations import monthly_equivalent, savings_monthly, total_monthly
 from .constants import APP_NAME, ROUNDING_MODE, VISUALIZATIONS_FILENAME
 from .models import FinancialEntry
 from .tags import normalize_tag_key
-from .theme import THEME_SLOT_NAMES
 
 logger = logging.getLogger(__name__)
 
@@ -36,12 +35,20 @@ DEFAULT_MULTI_TAG_STRATEGY = "split_equally"
 DEFAULT_INCOME_SYMBOL = "█"
 DEFAULT_EXPENSE_SYMBOL = "█"
 DEFAULT_SAVINGS_SYMBOL = "█"
-DEFAULT_OTHERS_SYMBOL = "·"
-DEFAULT_SEGMENT_SYMBOL = "▮"
+DEFAULT_OTHERS_SYMBOL = "⬜"
 DEFAULT_OVERVIEW_ENABLED = True
 DEFAULT_SHOW_LABELS = True
-DEFAULT_TAG_COLOR_SLOTS = ("warning", "accent", "success", "error", "foreground")
-DEFAULT_OTHERS_COLOR_SLOT = "muted"
+DEFAULT_TAG_SYMBOLS = ("🟧", "🟪", "🟨", "🟦", "🟫", "🟩", "🟥")
+ENTRY_TYPE_INCOME = "income"
+ENTRY_TYPE_EXPENSE = "expense"
+ENTRY_TYPE_BOTH = "both"
+KNOWN_ENTRY_TYPE_FILTERS = frozenset(
+    {
+        ENTRY_TYPE_INCOME,
+        ENTRY_TYPE_EXPENSE,
+        ENTRY_TYPE_BOTH,
+    }
+)
 OTHERS_LABEL = "Others"
 NO_DATA_MESSAGE = "No financial data available."
 NO_SPACE_MESSAGE = "No space available for visualization."
@@ -61,14 +68,13 @@ class OverviewVisualizationConfig:
     expense_symbol: str = DEFAULT_EXPENSE_SYMBOL
     savings_symbol: str = DEFAULT_SAVINGS_SYMBOL
     others_symbol: str = DEFAULT_OTHERS_SYMBOL
-    segment_symbol: str = DEFAULT_SEGMENT_SYMBOL
     show_labels: bool = DEFAULT_SHOW_LABELS
     max_legend_entries: int = DEFAULT_MAX_LEGEND_ENTRIES
     others_threshold: float = DEFAULT_OTHERS_THRESHOLD
     multi_tag_strategy: str = DEFAULT_MULTI_TAG_STRATEGY
     group_by: str | None = None
-    tag_color_slots: tuple[str, ...] = DEFAULT_TAG_COLOR_SLOTS
-    others_color_slot: str = DEFAULT_OTHERS_COLOR_SLOT
+    tag_symbols: tuple[str, ...] = DEFAULT_TAG_SYMBOLS
+    entry_type: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,6 +88,10 @@ class VisualizationConfig:
             overview_enabled=DEFAULT_OVERVIEW_ENABLED,
             overview_visualizations=(OverviewVisualizationConfig(),),
         )
+
+    @classmethod
+    def disabled(cls) -> VisualizationConfig:
+        return cls(overview_enabled=False, overview_visualizations=())
 
     @property
     def enabled_visualizations(self) -> tuple[OverviewVisualizationConfig, ...]:
@@ -108,7 +118,14 @@ class VisualizationConfigManager:
             return VisualizationConfig.default()
 
         try:
-            data = json.loads(self.path.read_text(encoding="utf-8"))
+            raw_data = self.path.read_text(encoding="utf-8")
+            if not raw_data.strip():
+                logger.info(
+                    "Visualization config %s is empty; disabling overview visualization.",
+                    self.path,
+                )
+                return VisualizationConfig.disabled()
+            data = json.loads(raw_data)
         except json.JSONDecodeError as exc:
             logger.warning(
                 "Invalid JSON in %s: %s at line %s, column %s.",
@@ -125,6 +142,13 @@ class VisualizationConfigManager:
                 exc.strerror or exc,
             )
             return VisualizationConfig.default()
+
+        if data == {}:
+            logger.info(
+                "Visualization config %s is empty; disabling overview visualization.",
+                self.path,
+            )
+            return VisualizationConfig.disabled()
 
         if not isinstance(data, dict):
             logger.warning(
@@ -220,11 +244,6 @@ class VisualizationConfigManager:
                 default=DEFAULT_OTHERS_SYMBOL,
                 source=f"{source}.othersSymbol",
             ),
-            segment_symbol=_parse_symbol(
-                data.get("segmentSymbol"),
-                default=DEFAULT_SEGMENT_SYMBOL,
-                source=f"{source}.segmentSymbol",
-            ),
             show_labels=_parse_bool(
                 data.get("showLabels"),
                 default=DEFAULT_SHOW_LABELS,
@@ -244,15 +263,14 @@ class VisualizationConfigManager:
                 source=source,
             ),
             group_by=_parse_optional_string(data.get("groupBy")),
-            tag_color_slots=_parse_color_slots(
-                data.get("tagColorSlots"),
-                default=DEFAULT_TAG_COLOR_SLOTS,
-                source=f"{source}.tagColorSlots",
+            tag_symbols=_parse_symbols(
+                data.get("tagSymbols"),
+                default=DEFAULT_TAG_SYMBOLS,
+                source=f"{source}.tagSymbols",
             ),
-            others_color_slot=_parse_color_slot(
-                data.get("othersColorSlot"),
-                default=DEFAULT_OTHERS_COLOR_SLOT,
-                source=f"{source}.othersColorSlot",
+            entry_type=_parse_entry_type_filter(
+                data.get("entryType"),
+                source=f"{source}.entryType",
             ),
         )
 
@@ -302,7 +320,6 @@ class _DistributionItem:
     label: str
     symbol: str
     value: Decimal
-    style_slot: str
 
 
 class VisualizationStrategy(Protocol):
@@ -315,27 +332,37 @@ class IncomeExpenseVisualizationStrategy:
     type = DEFAULT_VISUALIZATION_TYPE
 
     def render(self, context: VisualizationContext) -> VisualizationResult:
-        if context.income_total <= 0 and context.expense_total <= 0:
+        entry_type = _entry_type_filter_for(
+            context.config,
+            default=ENTRY_TYPE_BOTH,
+        )
+        items: list[_BarItem] = []
+        if _entry_type_includes(entry_type, ENTRY_TYPE_INCOME):
+            items.append(
+                _BarItem(
+                    label="Income",
+                    compact_label="I",
+                    symbol=context.config.income_symbol,
+                    value=context.income_total,
+                    style_slot="success",
+                )
+            )
+        if _entry_type_includes(entry_type, ENTRY_TYPE_EXPENSE):
+            items.append(
+                _BarItem(
+                    label="Expenditure",
+                    compact_label="E",
+                    symbol=context.config.expense_symbol,
+                    value=context.expense_total,
+                    style_slot="warning",
+                )
+            )
+
+        if not items or all(item.value <= 0 for item in items):
             return VisualizationResult(lines=(Text(NO_DATA_MESSAGE),))
 
-        items = (
-            _BarItem(
-                label="Income",
-                compact_label="I",
-                symbol=context.config.income_symbol,
-                value=context.income_total,
-                style_slot="success",
-            ),
-            _BarItem(
-                label="Expenditure",
-                compact_label="E",
-                symbol=context.config.expense_symbol,
-                value=context.expense_total,
-                style_slot="warning",
-            ),
-        )
         return _render_bar_items(
-            items,
+            tuple(items),
             context=context,
             max_segments=context.config.max_width,
             show_labels=context.config.show_labels,
@@ -346,7 +373,10 @@ class TagDistributionVisualizationStrategy:
     type = "tag_distribution"
 
     def render(self, context: VisualizationContext) -> VisualizationResult:
-        buckets = aggregate_tag_distribution(context.expense_entries, context.config)
+        buckets = aggregate_tag_distribution(
+            _tag_distribution_entries(context),
+            context.config,
+        )
         if not buckets:
             return VisualizationResult(lines=(Text(NO_DATA_MESSAGE),))
 
@@ -494,11 +524,16 @@ def aggregate_tag_distribution(
         visible = retained
 
     if others_total > 0:
-        if visible and visible[-1].key == others_key:
-            visible[-1] = TagDistributionBucket(
+        existing_others_index = next(
+            (index for index, bucket in enumerate(visible) if bucket.key == others_key),
+            None,
+        )
+        if existing_others_index is not None:
+            existing = visible[existing_others_index]
+            visible[existing_others_index] = TagDistributionBucket(
                 key=others_key,
                 label=OTHERS_LABEL,
-                amount=visible[-1].amount + others_total,
+                amount=existing.amount + others_total,
             )
         else:
             visible.append(
@@ -510,6 +545,40 @@ def aggregate_tag_distribution(
             )
 
     return tuple(visible)
+
+
+def _entry_type_filter_for(
+    config: OverviewVisualizationConfig,
+    *,
+    default: str,
+) -> str:
+    return config.entry_type or default
+
+
+def _entry_type_includes(entry_type: str, candidate: str) -> bool:
+    return entry_type == ENTRY_TYPE_BOTH or entry_type == candidate
+
+
+def _tag_distribution_entries(
+    context: VisualizationContext,
+) -> Mapping[str, FinancialEntry]:
+    entry_type = _entry_type_filter_for(
+        context.config,
+        default=ENTRY_TYPE_EXPENSE,
+    )
+    if entry_type == ENTRY_TYPE_INCOME:
+        return context.income_entries
+    if entry_type == ENTRY_TYPE_EXPENSE:
+        return context.expense_entries
+
+    entries: dict[str, FinancialEntry] = {}
+    entries.update(
+        {f"income:{name}": entry for name, entry in context.income_entries.items()}
+    )
+    entries.update(
+        {f"expense:{name}": entry for name, entry in context.expense_entries.items()}
+    )
+    return entries
 
 
 def _render_bar_items(
@@ -545,19 +614,18 @@ def _distribution_items_from_buckets(
     buckets: Sequence[TagDistributionBucket],
     config: OverviewVisualizationConfig,
 ) -> tuple[_DistributionItem, ...]:
-    color_slots = config.tag_color_slots or DEFAULT_TAG_COLOR_SLOTS
+    tag_symbols = config.tag_symbols or DEFAULT_TAG_SYMBOLS
     items: list[_DistributionItem] = []
     for index, bucket in enumerate(buckets):
         if bucket.key == normalize_tag_key(OTHERS_LABEL):
-            style_slot = config.others_color_slot
+            symbol = config.others_symbol
         else:
-            style_slot = color_slots[index % len(color_slots)]
+            symbol = tag_symbols[index % len(tag_symbols)]
         items.append(
             _DistributionItem(
                 label=bucket.label,
-                symbol=config.segment_symbol,
+                symbol=symbol,
                 value=bucket.amount,
-                style_slot=style_slot,
             )
         )
     return tuple(items)
@@ -572,10 +640,11 @@ def _render_distribution(
     if context.available_width <= 0:
         return VisualizationResult(lines=(Text(NO_SPACE_MESSAGE),))
 
-    symbol_width = max(0, cell_len(context.config.segment_symbol))
-    if symbol_width <= 0:
+    symbol_widths = [max(0, cell_len(item.symbol)) for item in items]
+    if not symbol_widths or min(symbol_widths) <= 0:
         return VisualizationResult(lines=(Text(NO_SPACE_MESSAGE),))
 
+    symbol_width = max(symbol_widths)
     max_segments_by_width = context.available_width // symbol_width
     target_segments = min(max_segments, max_segments_by_width)
     if target_segments <= 0:
@@ -584,7 +653,7 @@ def _render_distribution(
     fitted_items = _fit_distribution_items(
         items,
         max_items=target_segments,
-        others_color_slot=context.config.others_color_slot,
+        others_symbol=context.config.others_symbol,
     )
     counts = _scale_distribution_to_segments(
         [item.value for item in fitted_items],
@@ -597,17 +666,14 @@ def _render_distribution(
     for item, count in zip(fitted_items, counts, strict=True):
         if count <= 0:
             continue
-        bar.append(
-            item.symbol * count,
-            style=_resolve_style(context, item.style_slot),
-        )
+        bar.append(item.symbol * count)
 
     legend = _render_distribution_legend(fitted_items, context=context)
     return VisualizationResult(lines=(bar,), legend=legend)
 
 
 def _fit_distribution_items(
-    items: Sequence[_DistributionItem], *, max_items: int, others_color_slot: str
+    items: Sequence[_DistributionItem], *, max_items: int, others_symbol: str
 ) -> tuple[_DistributionItem, ...]:
     positive_items = tuple(item for item in items if item.value > 0)
     if max_items <= 0 or len(positive_items) <= max_items:
@@ -617,9 +683,8 @@ def _fit_distribution_items(
         return (
             _DistributionItem(
                 label=OTHERS_LABEL,
-                symbol=positive_items[0].symbol,
+                symbol=others_symbol,
                 value=sum((item.value for item in positive_items), Decimal("0")),
-                style_slot=others_color_slot,
             ),
         )
 
@@ -628,9 +693,8 @@ def _fit_distribution_items(
     retained.append(
         _DistributionItem(
             label=OTHERS_LABEL,
-            symbol=positive_items[0].symbol,
+            symbol=others_symbol,
             value=sum((item.value for item in overflow), Decimal("0")),
-            style_slot=others_color_slot,
         )
     )
     return tuple(retained)
@@ -681,17 +745,17 @@ def _render_distribution_legend(
     context: VisualizationContext,
 ) -> tuple[Text, ...]:
     legend: list[Text] = []
-    symbol_width = cell_len(context.config.segment_symbol)
-    label_available_width = context.available_width - symbol_width - 1
-    if label_available_width <= 0:
-        return ()
 
     for item in items:
+        symbol_width = cell_len(item.symbol)
+        label_available_width = context.available_width - symbol_width - 1
+        if label_available_width <= 0:
+            continue
         label = _truncate_to_width(item.label, label_available_width)
         if not label:
             continue
         line = Text()
-        line.append(item.symbol, style=_resolve_style(context, item.style_slot))
+        line.append(item.symbol)
         line.append(" ")
         line.append(label)
         legend.append(line)
@@ -852,7 +916,7 @@ def _parse_symbol(value: object, *, default: str, source: str) -> str:
     return symbol
 
 
-def _parse_color_slots(
+def _parse_symbols(
     value: object,
     *,
     default: tuple[str, ...],
@@ -861,46 +925,54 @@ def _parse_color_slots(
     if value is None:
         return default
     if not isinstance(value, list):
-        logger.warning("Invalid color slot list in %s; using defaults.", source)
+        logger.warning("Invalid symbol list in %s; using defaults.", source)
         return default
 
-    slots: list[str] = []
+    symbols: list[str] = []
     for index, item in enumerate(value, start=1):
-        slot = _parse_color_slot(
+        symbol = _parse_optional_symbol(
             item,
-            default="",
             source=f"{source}[{index}]",
-            warn_on_missing=True,
         )
-        if slot:
-            slots.append(slot)
+        if symbol:
+            symbols.append(symbol)
 
-    if not slots:
-        logger.warning("No valid color slots in %s; using defaults.", source)
+    if not symbols:
+        logger.warning("No valid symbols in %s; using defaults.", source)
         return default
-    return tuple(slots)
+    return tuple(symbols)
 
 
-def _parse_color_slot(
-    value: object,
-    *,
-    default: str,
-    source: str,
-    warn_on_missing: bool = False,
-) -> str:
-    if value is None:
-        if warn_on_missing:
-            logger.warning("Invalid color slot %r in %s; skipping.", value, source)
-        return default
+def _parse_optional_symbol(value: object, *, source: str) -> str | None:
     if not isinstance(value, str):
-        logger.warning("Invalid color slot %r in %s; using %s.", value, source, default)
-        return default
+        logger.warning("Invalid symbol %r in %s; skipping.", value, source)
+        return None
 
-    slot = value.strip()
-    if slot not in THEME_SLOT_NAMES:
-        logger.warning("Invalid color slot %r in %s; using %s.", value, source, default)
-        return default
-    return slot
+    symbol = value.strip()
+    if not symbol or cell_len(symbol) <= 0:
+        logger.warning("Invalid symbol %r in %s; skipping.", value, source)
+        return None
+    return symbol
+
+
+def _parse_entry_type_filter(value: object, *, source: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        logger.warning(
+            "Invalid entry type filter %r in %s; using strategy default.", value, source
+        )
+        return None
+
+    entry_type = value.strip().casefold()
+    if entry_type not in KNOWN_ENTRY_TYPE_FILTERS:
+        logger.warning(
+            "Invalid entry type filter %r in %s; using strategy default.",
+            value,
+            source,
+        )
+        return None
+    return entry_type
 
 
 def _parse_bool(value: object, *, default: bool) -> bool:

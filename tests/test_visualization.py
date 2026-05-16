@@ -10,7 +10,7 @@ from expenditui.visualization import (
     DEFAULT_MAX_LEGEND_ENTRIES,
     DEFAULT_MAX_WIDTH,
     DEFAULT_OTHERS_THRESHOLD,
-    DEFAULT_SEGMENT_SYMBOL,
+    DEFAULT_OTHERS_SYMBOL,
     DEFAULT_VISUALIZATION_TYPE,
     NO_DATA_MESSAGE,
     NO_SPACE_MESSAGE,
@@ -40,6 +40,53 @@ def test_visualization_config_manager_uses_defaults_when_file_is_missing(
     assert manager.config == VisualizationConfig.default()
 
 
+def test_visualization_config_manager_disables_overview_when_file_is_empty(
+    tmp_path,
+) -> None:
+    config_path = tmp_path / "visualizations.json"
+    config_path.write_text("", encoding="utf-8")
+
+    manager = VisualizationConfigManager(path=config_path)
+
+    assert manager.config.overview_enabled is False
+    assert manager.config.overview_visualizations == ()
+
+
+def test_visualization_config_manager_disables_overview_when_file_is_whitespace(
+    tmp_path,
+) -> None:
+    config_path = tmp_path / "visualizations.json"
+    config_path.write_text("  \n\t", encoding="utf-8")
+
+    manager = VisualizationConfigManager(path=config_path)
+
+    assert manager.config.overview_enabled is False
+    assert manager.config.overview_visualizations == ()
+
+
+def test_visualization_config_manager_disables_overview_when_file_is_empty_object(
+    tmp_path,
+) -> None:
+    config_path = tmp_path / "visualizations.json"
+    config_path.write_text("{}", encoding="utf-8")
+
+    manager = VisualizationConfigManager(path=config_path)
+
+    assert manager.config.overview_enabled is False
+    assert manager.config.overview_visualizations == ()
+
+
+def test_visualization_config_manager_uses_defaults_when_file_is_malformed(
+    tmp_path,
+) -> None:
+    config_path = tmp_path / "visualizations.json"
+    config_path.write_text("{ invalid json", encoding="utf-8")
+
+    manager = VisualizationConfigManager(path=config_path)
+
+    assert manager.config == VisualizationConfig.default()
+
+
 def test_visualization_config_manager_normalizes_future_visualization_array(
     tmp_path,
 ) -> None:
@@ -55,15 +102,16 @@ def test_visualization_config_manager_normalizes_future_visualization_array(
                             "enabled": False,
                             "type": "tag_distribution",
                             "maxWidth": 24,
-                            "segmentSymbol": "▮",
-                            "tagColorSlots": ["warning", "accent"],
-                            "othersColorSlot": "muted",
+                            "entryType": "expense",
+                            "tagSymbols": ["🟧", "🟪"],
+                            "othersSymbol": "⬜",
                         },
                         {
                             "id": "income-expense",
                             "enabled": True,
                             "type": "income_vs_expense",
                             "maxWidth": 12,
+                            "entryType": "both",
                             "incomeSymbol": "🟩",
                             "expenseSymbol": "🟥",
                             "showLabels": False,
@@ -82,13 +130,11 @@ def test_visualization_config_manager_normalizes_future_visualization_array(
         "tag-breakdown",
         "income-expense",
     ]
-    assert manager.config.overview_visualizations[0].segment_symbol == "▮"
-    assert manager.config.overview_visualizations[0].tag_color_slots == (
-        "warning",
-        "accent",
-    )
-    assert manager.config.overview_visualizations[0].others_color_slot == "muted"
+    assert manager.config.overview_visualizations[0].entry_type == "expense"
+    assert manager.config.overview_visualizations[0].tag_symbols == ("🟧", "🟪")
+    assert manager.config.overview_visualizations[0].others_symbol == "⬜"
     assert manager.config.overview_visualizations[1].max_width == 12
+    assert manager.config.overview_visualizations[1].entry_type == "both"
     assert manager.config.overview_visualizations[1].show_labels is False
 
 
@@ -103,9 +149,9 @@ def test_visualization_config_manager_recovers_from_invalid_fields(
                     "type": "unknown",
                     "maxWidth": 0,
                     "expenseSymbol": "",
-                    "segmentSymbol": "",
-                    "tagColorSlots": ["warning", "nope", 1],
-                    "othersColorSlot": "missing",
+                    "othersSymbol": "",
+                    "tagSymbols": ["🟧", "", 1],
+                    "entryType": "cashflow",
                     "maxLegendEntries": 0,
                     "othersThreshold": 9,
                 }
@@ -121,9 +167,9 @@ def test_visualization_config_manager_recovers_from_invalid_fields(
     assert panel.type == DEFAULT_VISUALIZATION_TYPE
     assert panel.max_width == DEFAULT_MAX_WIDTH
     assert panel.expense_symbol == DEFAULT_EXPENSE_SYMBOL
-    assert panel.segment_symbol == DEFAULT_SEGMENT_SYMBOL
-    assert panel.tag_color_slots == ("warning",)
-    assert panel.others_color_slot == "muted"
+    assert panel.others_symbol == DEFAULT_OTHERS_SYMBOL
+    assert panel.tag_symbols == ("🟧",)
+    assert panel.entry_type is None
     assert panel.max_legend_entries == DEFAULT_MAX_LEGEND_ENTRIES
     assert panel.others_threshold == DEFAULT_OTHERS_THRESHOLD
     assert "Unsupported visualization type" in caplog.text
@@ -185,6 +231,36 @@ def test_visualization_renderer_returns_no_data_message_when_totals_are_empty() 
     assert [line.plain for line in result.lines] == [NO_DATA_MESSAGE]
 
 
+def test_visualization_renderer_can_show_only_income_or_expense() -> None:
+    renderer = VisualizationRenderer()
+
+    income_result = renderer.render(
+        config=VisualizationConfig(
+            overview_enabled=True,
+            overview_visualizations=(
+                OverviewVisualizationConfig(entry_type="income", max_width=10),
+            ),
+        ),
+        income_entries={"salary": make_entry("100.00")},
+        expense_entries={"rent": make_entry("50.00")},
+        available_width=32,
+    )
+    expense_result = renderer.render(
+        config=VisualizationConfig(
+            overview_enabled=True,
+            overview_visualizations=(
+                OverviewVisualizationConfig(entry_type="expense", max_width=10),
+            ),
+        ),
+        income_entries={"salary": make_entry("100.00")},
+        expense_entries={"rent": make_entry("50.00")},
+        available_width=32,
+    )
+
+    assert [line.plain for line in income_result.lines] == ["Income  ██████████"]
+    assert [line.plain for line in expense_result.lines] == ["Expenditure  ██████████"]
+
+
 def test_visualization_renderer_renders_tag_distribution_panel() -> None:
     renderer = VisualizationRenderer()
     config = VisualizationConfig(
@@ -193,7 +269,7 @@ def test_visualization_renderer_renders_tag_distribution_panel() -> None:
             OverviewVisualizationConfig(
                 type="tag_distribution",
                 max_width=8,
-                tag_color_slots=("warning", "accent"),
+                tag_symbols=("🟧", "🟪"),
             ),
         ),
     )
@@ -205,15 +281,14 @@ def test_visualization_renderer_renders_tag_distribution_panel() -> None:
             "rent": make_entry("75.00", tags=["Housing"]),
             "coffee": make_entry("25.00", tags=["Food"]),
         },
-        available_width=32,
+        available_width=16,
         style_for_slot=lambda slot: f"style:{slot}",
     )
 
-    assert [line.plain for line in result.lines] == ["▮" * 8]
-    assert [line.plain for line in result.legend] == ["▮ Housing", "▮ Food"]
-    assert result.lines[0].spans[0].style == "style:warning"
-    assert result.lines[0].spans[1].style == "style:accent"
-    assert result.legend[0].spans[0].style == "style:warning"
+    assert [line.plain for line in result.lines] == ["🟧" * 6 + "🟪" * 2]
+    assert [line.plain for line in result.legend] == ["🟧 Housing", "🟪 Food"]
+    assert result.lines[0].spans == []
+    assert result.legend[0].spans == []
 
 
 def test_visualization_renderer_groups_tag_distribution_overflow_into_others() -> None:
@@ -240,15 +315,15 @@ def test_visualization_renderer_groups_tag_distribution_overflow_into_others() -
             "four": make_entry("10.00", tags=["Four"]),
             "five": make_entry("5.00", tags=["Five"]),
         },
-        available_width=16,
+        available_width=8,
     )
 
-    assert [line.plain for line in result.lines] == ["▮" * 4]
+    assert [line.plain for line in result.lines] == ["🟧🟪🟨⬜"]
     assert [line.plain for line in result.legend] == [
-        "▮ One",
-        "▮ Two",
-        "▮ Three",
-        "▮ Others",
+        "🟧 One",
+        "🟪 Two",
+        "🟨 Three",
+        "⬜ Other",
     ]
 
 
@@ -267,6 +342,48 @@ def test_visualization_renderer_returns_no_data_for_empty_tag_distribution() -> 
     )
 
     assert [line.plain for line in result.lines] == [NO_DATA_MESSAGE]
+
+
+def test_visualization_renderer_tag_distribution_can_use_income_or_both() -> None:
+    renderer = VisualizationRenderer()
+    income_config = VisualizationConfig(
+        overview_enabled=True,
+        overview_visualizations=(
+            OverviewVisualizationConfig(
+                type="tag_distribution",
+                entry_type="income",
+                max_width=4,
+                tag_symbols=("🟧", "🟪"),
+            ),
+        ),
+    )
+    both_config = VisualizationConfig(
+        overview_enabled=True,
+        overview_visualizations=(
+            OverviewVisualizationConfig(
+                type="tag_distribution",
+                entry_type="both",
+                max_width=4,
+                tag_symbols=("🟧", "🟪"),
+            ),
+        ),
+    )
+
+    income_result = renderer.render(
+        config=income_config,
+        income_entries={"salary": make_entry("100.00", tags=["Work"])},
+        expense_entries={"rent": make_entry("50.00", tags=["Housing"])},
+        available_width=8,
+    )
+    both_result = renderer.render(
+        config=both_config,
+        income_entries={"salary": make_entry("100.00", tags=["Work"])},
+        expense_entries={"rent": make_entry("50.00", tags=["Housing"])},
+        available_width=10,
+    )
+
+    assert [line.plain for line in income_result.legend] == ["🟧 Work"]
+    assert [line.plain for line in both_result.legend] == ["🟧 Work", "🟪 Housing"]
 
 
 def test_visualization_renderer_returns_no_space_for_too_narrow_tag_distribution() -> (
@@ -332,3 +449,27 @@ def test_aggregate_tag_distribution_splits_multi_tags_and_groups_small_buckets()
         ("Friends", Decimal("30.00")),
         ("Others", Decimal("10.00")),
     ]
+
+
+def test_aggregate_tag_distribution_merges_existing_others_with_small_buckets() -> None:
+    config = OverviewVisualizationConfig(
+        others_threshold=0.02,
+        max_legend_entries=6,
+    )
+
+    buckets = aggregate_tag_distribution(
+        {
+            "food": make_entry("100.00", tags=["Food"]),
+            "untagged": make_entry("50.00"),
+            "rent": make_entry("40.00", tags=["Rent"]),
+            "tiny": make_entry("1.00", tags=["Tiny"]),
+        },
+        config,
+    )
+
+    assert [(bucket.label, bucket.amount) for bucket in buckets] == [
+        ("Food", Decimal("100.00")),
+        ("Others", Decimal("51.00")),
+        ("Rent", Decimal("40.00")),
+    ]
+    assert sum(1 for bucket in buckets if bucket.label == "Others") == 1

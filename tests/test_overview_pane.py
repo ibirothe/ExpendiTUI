@@ -7,6 +7,7 @@ from decimal import Decimal
 from expenditui.app import ExpendiTUIApp
 from expenditui.models import FinancialEntry, Frequency
 from expenditui.screens.overview import OverviewPane
+from expenditui.visualization import VisualizationConfig
 
 
 def test_page_actions_target_overview_table(monkeypatch) -> None:
@@ -33,6 +34,7 @@ def test_overview_layout_keeps_summary_and_visualization_visible_when_height_is_
 ):
     async def run() -> None:
         app = ExpendiTUIApp()
+        app.visualization_manager.config = VisualizationConfig.default()
         app.expenses = {
             f"expense-{index}": FinancialEntry(
                 amount=Decimal("10.00"),
@@ -69,6 +71,26 @@ def test_overview_layout_keeps_summary_and_visualization_visible_when_height_is_
                 table.size.height
                 < totals_section.size.height + visualization_section.size.height
             )
+
+    asyncio.run(run())
+
+
+def test_overview_layout_hides_visualization_section_when_config_is_disabled() -> None:
+    async def run() -> None:
+        app = ExpendiTUIApp()
+        app.visualization_manager.config = VisualizationConfig.disabled()
+
+        async with app.run_test(size=(100, 20)):
+            overview = app.query_one(OverviewPane)
+            totals_section = overview.query_one("#overview-totals-section")
+            visualization_section = overview.query_one(
+                "#overview-visualization-section"
+            )
+            table = overview.query_one("#overview-table")
+
+            assert totals_section.size.height > 0
+            assert visualization_section.display is False
+            assert table.size.height > 0
 
     asyncio.run(run())
 
