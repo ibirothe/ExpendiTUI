@@ -29,6 +29,7 @@ class EditMode(str, Enum):
     CREATE = "create"
     EDIT = "edit"
     CONFIRM_DELETE = "confirm_delete"
+    MOVE = "move"
 
 
 class ConfirmDialog(Static, can_focus=True):
@@ -273,6 +274,8 @@ class EditPane(Vertical):
         }
         self.modal_origin_name: str | None = None
         self.modal_target_index: int | None = None
+        self.move_original_entries: list[DraftEntry] | None = None
+        self.move_original_index: int | None = None
         self.message_kind = "foreground"
         self.tag_suggestions: list[str] = []
         self.highlighted_tag_index: int | None = None
@@ -291,7 +294,7 @@ class EditPane(Vertical):
 
     @property
     def blocks_theme_switch(self) -> bool:
-        return self.mode in {EditMode.CREATE, EditMode.EDIT}
+        return self.mode in {EditMode.CREATE, EditMode.EDIT, EditMode.MOVE}
 
     def on_mount(self) -> None:
         table = self.query_one("#edit-table", DataTable)
@@ -324,6 +327,8 @@ class EditPane(Vertical):
         self.mode = EditMode.NAVIGATION
         self.modal_origin_name = self.selected_name
         self.modal_target_index = None
+        self.move_original_entries = None
+        self.move_original_index = None
         self.tag_suggestions = []
         self.highlighted_tag_index = None
         if self.is_mounted:
@@ -436,13 +441,78 @@ class EditPane(Vertical):
         dialog.focus()
         self.set_message("")
 
+    def start_move(self) -> None:
+        if not self.entries:
+            self.set_message("There is no entry to move.", kind="error")
+            return
+        self.modal_origin_name = self.selected_name
+        self.modal_target_index = self.current_index
+        self.move_original_index = self.current_index
+        self.move_original_entries = [self._copy_draft(entry) for entry in self.entries]
+        self.mode = EditMode.MOVE
+        self.refresh_table()
+        self._update_mode_ui()
+        self.focus_table()
+        self.set_message(
+            "MOVE MODE: use j/k or arrows, Enter to save, Esc to cancel.",
+            kind="accent",
+        )
+
+    def move_active_entry(self, delta: int) -> None:
+        if self.mode is not EditMode.MOVE or not self.entries:
+            return
+        next_index = max(0, min(self.current_index + delta, len(self.entries) - 1))
+        if next_index == self.current_index:
+            return
+        moving_entry = self.entries.pop(self.current_index)
+        self.entries.insert(next_index, moving_entry)
+        self.current_index = next_index
+        self.modal_target_index = next_index
+        self.refresh_table()
+        self.focus_table()
+
+    def confirm_move(self) -> None:
+        if self.mode is not EditMode.MOVE or not self.entries:
+            return
+
+        moved_name = self.selected_name
+        validated, errors = self.validate_entries(self.entries)
+        if errors:
+            self.set_message(" | ".join(errors), kind="error")
+            return
+
+        error = self.app.save_state(self.active_dataset, validated)
+        if error:
+            self.set_message(error, kind="error")
+            return
+
+        self.move_original_entries = None
+        self.move_original_index = None
+        self.app.refresh_views(sync_edit=False)
+        self.load_from_app(select_name=moved_name)
+        self.focus_table()
+        self.set_message(
+            f"Moved {self.active_dataset.value}: {moved_name}.",
+            kind="success",
+        )
+
     def cancel_modal(self) -> None:
+        canceling_move = self.mode is EditMode.MOVE
+        if canceling_move and self.move_original_entries is not None:
+            self.entries = [
+                self._copy_draft(entry) for entry in self.move_original_entries
+            ]
+            self.current_index = self.move_original_index or 0
         self.mode = EditMode.NAVIGATION
-        if self.entries:
+        if canceling_move:
+            self.current_index = max(0, min(self.current_index, len(self.entries) - 1))
+        elif self.entries:
             self.current_index = self._index_for_name(self.modal_origin_name)
         else:
             self.current_index = 0
         self.modal_target_index = None
+        self.move_original_entries = None
+        self.move_original_index = None
         self.tag_suggestions = []
         self.highlighted_tag_index = None
         self._update_mode_ui()
@@ -593,6 +663,10 @@ class EditPane(Vertical):
             self._handle_confirmation_key(event)
             return
 
+        if self.mode is EditMode.MOVE:
+            self._handle_move_key(event)
+            return
+
         if (
             event.key == "escape"
             and self._tag_suggestions_open()
@@ -678,6 +752,11 @@ class EditPane(Vertical):
             event.prevent_default()
             self.start_delete_confirmation()
             return
+        if character == "m":
+            event.stop()
+            event.prevent_default()
+            self.start_move()
+            return
         if character == "i":
             event.stop()
             event.prevent_default()
@@ -691,6 +770,19 @@ class EditPane(Vertical):
             self.confirm_delete()
         elif character == "n" or event.key == "escape":
             self.cancel_modal()
+
+    def _handle_move_key(self, event: events.Key) -> None:
+        event.stop()
+        event.prevent_default()
+        character = (event.character or "").lower()
+        if event.key == "enter":
+            self.confirm_move()
+        elif event.key == "escape":
+            self.cancel_modal()
+        elif event.key == "up" or character == "k":
+            self.move_active_entry(-1)
+        elif event.key == "down" or character == "j":
+            self.move_active_entry(1)
 
     def _show_form(self, draft: DraftEntry) -> None:
         form = self.query_one(EntryForm)
@@ -718,12 +810,13 @@ class EditPane(Vertical):
         )
         title_text = {
             EditMode.NAVIGATION: (
-                f"Edit {dataset_name} · Navigation · i Toggle "
+                f"Edit {dataset_name} · Navigation · m Move · i Toggle "
                 f"{'Income' if self.active_dataset is EntryType.EXPENSE else 'Expenses'}"
             ),
             EditMode.CREATE: f"Edit {dataset_name} · Create",
             EditMode.EDIT: f"Edit {dataset_name} · Edit",
             EditMode.CONFIRM_DELETE: f"Edit {dataset_name} · Confirm Delete",
+            EditMode.MOVE: f"Edit {dataset_name} · MOVE MODE",
         }[self.mode]
         title.update(title_text)
         self._refresh_app_bindings()
@@ -760,6 +853,9 @@ class EditPane(Vertical):
             elif self.mode is EditMode.CONFIRM_DELETE:
                 tag = "DELETE"
                 accent_slot = "error"
+            elif self.mode is EditMode.MOVE:
+                tag = "MOVING"
+                accent_slot = "success"
 
         tags_display = ", ".join(entry.tags)
         if tag is None:
@@ -783,6 +879,14 @@ class EditPane(Vertical):
         frequency = Text(entry.frequency, style=row_style)
         tags = Text(tags_display, style=row_style)
         return name, amount, frequency, tags
+
+    def _copy_draft(self, draft: DraftEntry) -> DraftEntry:
+        return DraftEntry(
+            name=draft.name,
+            amount=draft.amount,
+            frequency=draft.frequency,
+            tags=list(draft.tags),
+        )
 
     def apply_theme(self, theme: AppTheme) -> None:
         self.styles.background = theme.background

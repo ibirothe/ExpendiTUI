@@ -50,9 +50,11 @@ EDIT_SHORTCUTS = ShortcutSection(
     rows=(
         ShortcutItem("j / k", "Move the selected entry down or up."),
         ShortcutItem("i", "Toggle between expense and income lists."),
+        ShortcutItem("m", "Move the selected entry to a new position."),
         ShortcutItem("a / A", "Create a new entry in the current list."),
         ShortcutItem("e / E", "Edit the currently selected entry."),
         ShortcutItem("d / D", "Delete the selected entry."),
+        ShortcutItem("enter / esc", "Confirm or cancel move mode."),
         ShortcutItem("y / n", "Confirm or cancel delete."),
         ShortcutItem(
             "tab / shift+tab",

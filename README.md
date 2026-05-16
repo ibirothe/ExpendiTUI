@@ -179,7 +179,7 @@ while `tag_distribution` keeps its expense-focused default.
 ExpendiTUI has four visible tabs:
 
 - `Overview` shows all saved expense and income entries with monthly and yearly totals and savings.
-- `Edit` uses a modal workflow for create, edit, and delete operations.
+- `Edit` uses a modal workflow for create, edit, move, and delete operations.
 - `Help` shows the available keyboard shortcuts in a structured guide.
 - `Settings` is reserved for future configuration options.
 
@@ -190,12 +190,16 @@ is highlighted by Textual's tab widget.
 
 - `q` quit the application
 - `r` reload the JSON file from disk
-- `t` cycle themes globally, except while typing in Edit create or edit forms
+- `t` cycle themes globally, except while Edit is in create, edit, or move mode
 - `o` open the Overview tab
 - `h` open the Help tab
 - `e` open the Edit tab
 - `j` / `k` move the selected Edit row down or up
 - `i` toggle between expenses and income while in Edit navigation mode
+- `m` enter move mode for the selected row in Edit
+- `j` / `k` or `up` / `down` move the row while in move mode
+- `enter` confirm move mode and persist the new order
+- `esc` cancel move mode and restore the original order
 - `a` / `A` open create mode in Edit
 - `e` / `E` open edit mode for the selected row in Edit
 - `d` / `D` open delete confirmation for the selected row in Edit
