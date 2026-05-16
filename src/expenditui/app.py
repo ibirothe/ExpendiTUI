@@ -49,6 +49,7 @@ class ExpendiTUIApp(App[None]):
         Binding("h", "show_help", "Help"),
         Binding("s", "show_settings", "Settings"),
         Binding("/", "focus_overview_search", "Search"),
+        Binding("u", "toggle_overview_sort", "Sort"),
         Binding(
             "enter",
             "open_overview_selection_in_edit",
@@ -294,6 +295,7 @@ class ExpendiTUIApp(App[None]):
                 "show_settings",
                 "back",
                 "focus_overview_search",
+                "toggle_overview_sort",
                 "open_overview_selection_in_edit",
                 "scroll_active_page_up",
                 "scroll_active_page_down",
@@ -314,6 +316,13 @@ class ExpendiTUIApp(App[None]):
         if action == "show_settings":
             return self.active_tab_id != SETTINGS_TAB
         if action == "focus_overview_search":
+            if self.active_tab_id != OVERVIEW_TAB:
+                return False
+            try:
+                return not self.query_one(OverviewPane).search_has_focus
+            except (NoMatches, ScreenStackError):
+                return True
+        if action == "toggle_overview_sort":
             if self.active_tab_id != OVERVIEW_TAB:
                 return False
             try:
@@ -389,6 +398,14 @@ class ExpendiTUIApp(App[None]):
             return
         self.query_one(OverviewPane).focus_search()
 
+    def action_toggle_overview_sort(self) -> None:
+        if self.active_tab_id != OVERVIEW_TAB:
+            return
+        overview = self.query_one(OverviewPane)
+        if overview.search_has_focus:
+            return
+        overview.toggle_sort_mode()
+
     def action_open_overview_selection_in_edit(self) -> None:
         if self.active_tab_id != OVERVIEW_TAB:
             return
@@ -426,22 +443,38 @@ class ExpendiTUIApp(App[None]):
     def refresh_message_area(self) -> None:
         message = self.query_one("#app-message", Static)
         message.styles.background = self.theme_color("background")
+        sort_suffix = self._overview_sort_status_suffix()
         if self.last_error:
             message.styles.color = self.theme_color("error")
-            message.update(self.last_error)
+            message.update(self._message_with_suffix(self.last_error, sort_suffix))
             return
         if self.theme_notice:
             message.styles.color = self.theme_color("accent")
-            message.update(self.theme_notice)
+            message.update(self._message_with_suffix(self.theme_notice, sort_suffix))
             return
         if self.status_message:
             color_slot = (
                 "success" if self.status_message_kind == "success" else "foreground"
             )
             message.styles.color = self.theme_color(color_slot)
-            message.update(self.status_message)
+            message.update(self._message_with_suffix(self.status_message, sort_suffix))
             return
-        message.update("")
+        message.styles.color = self.theme_color("foreground")
+        message.update(sort_suffix)
+
+    def _overview_sort_status_suffix(self) -> str:
+        if self.active_tab_id != OVERVIEW_TAB:
+            return ""
+        try:
+            return self.query_one(OverviewPane).sort_status_label
+        except (NoMatches, ScreenStackError):
+            return ""
+
+    @staticmethod
+    def _message_with_suffix(message: str, suffix: str) -> str:
+        if not suffix:
+            return message
+        return f"{message} | {suffix}"
 
     @property
     def visualization_config(self) -> VisualizationConfig:

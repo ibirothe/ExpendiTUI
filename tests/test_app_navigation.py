@@ -20,6 +20,7 @@ def test_bindings_expose_direct_tab_navigation_without_legacy_edit_actions() -> 
     assert bindings["e"] == "show_edit"
     assert bindings["s"] == "show_settings"
     assert bindings["/"] == "focus_overview_search"
+    assert bindings["u"] == "toggle_overview_sort"
     assert bindings["enter"] == "open_overview_selection_in_edit"
     assert bindings["pageup"] == "scroll_active_page_up"
     assert bindings["pagedown"] == "scroll_active_page_down"
@@ -84,6 +85,7 @@ def test_direct_tab_actions_are_hidden_only_for_active_tab() -> None:
     assert app.check_action("show_edit", ()) is True
     assert app.check_action("show_help", ()) is True
     assert app.check_action("focus_overview_search", ()) is True
+    assert app.check_action("toggle_overview_sort", ()) is True
     assert app.check_action("scroll_active_page_up", ()) is True
     assert app.check_action("scroll_active_page_down", ()) is True
 
@@ -92,6 +94,7 @@ def test_direct_tab_actions_are_hidden_only_for_active_tab() -> None:
     assert app.check_action("show_edit", ()) is False
     assert app.check_action("show_help", ()) is True
     assert app.check_action("focus_overview_search", ()) is False
+    assert app.check_action("toggle_overview_sort", ()) is False
     assert app.check_action("scroll_active_page_up", ()) is True
     assert app.check_action("scroll_active_page_down", ()) is True
 
@@ -100,6 +103,7 @@ def test_direct_tab_actions_are_hidden_only_for_active_tab() -> None:
     assert app.check_action("show_edit", ()) is True
     assert app.check_action("show_help", ()) is False
     assert app.check_action("focus_overview_search", ()) is False
+    assert app.check_action("toggle_overview_sort", ()) is False
     assert app.check_action("scroll_active_page_up", ()) is True
     assert app.check_action("scroll_active_page_down", ()) is True
 
@@ -109,6 +113,7 @@ def test_direct_tab_actions_are_hidden_only_for_active_tab() -> None:
     assert app.check_action("show_help", ()) is True
     assert app.check_action("show_settings", ()) is False
     assert app.check_action("focus_overview_search", ()) is False
+    assert app.check_action("toggle_overview_sort", ()) is False
     assert app.check_action("scroll_active_page_up", ()) is False
     assert app.check_action("scroll_active_page_down", ()) is False
     assert app.check_action("back", ()) is True
@@ -127,6 +132,7 @@ def test_modal_edit_blocks_global_navigation_actions(monkeypatch) -> None:
     assert app.check_action("scroll_active_page_down", ()) is False
     assert app.check_action("reload", ()) is False
     assert app.check_action("focus_overview_search", ()) is False
+    assert app.check_action("toggle_overview_sort", ()) is False
     assert app.check_action("back", ()) is False
 
 
@@ -281,6 +287,39 @@ def test_overview_search_action_focuses_overview_search(monkeypatch) -> None:
     app.action_focus_overview_search()
 
     assert calls == ["focus"]
+
+
+def test_overview_sort_action_toggles_only_when_search_is_not_focused(
+    monkeypatch,
+) -> None:
+    app = ExpendiTUIApp()
+    app.active_tab_id = OVERVIEW_TAB
+    calls: list[str] = []
+    overview = SimpleNamespace(
+        search_has_focus=False, toggle_sort_mode=lambda: calls.append("toggle")
+    )
+
+    monkeypatch.setattr(
+        app,
+        "query_one",
+        lambda selector, *_args: (
+            overview
+            if hasattr(selector, "__name__") and selector.__name__ == "OverviewPane"
+            else None
+        ),
+    )
+
+    assert app.check_action("toggle_overview_sort", ()) is True
+    app.action_toggle_overview_sort()
+
+    overview.search_has_focus = True
+    assert app.check_action("toggle_overview_sort", ()) is False
+    app.action_toggle_overview_sort()
+
+    app.active_tab_id = EDIT_TAB
+    app.action_toggle_overview_sort()
+
+    assert calls == ["toggle"]
 
 
 def test_back_exits_overview_search_before_tab_navigation(monkeypatch) -> None:
