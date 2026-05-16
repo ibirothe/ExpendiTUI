@@ -9,7 +9,11 @@ from textual.widgets import DataTable, Input
 from expenditui.app import EDIT_TAB, ExpendiTUIApp
 from expenditui.models import EntryType, FinancialEntry, Frequency
 from expenditui.screens.edit import EditPane
-from expenditui.screens.overview import NO_MATCHING_ENTRIES_MESSAGE, OverviewPane
+from expenditui.screens.overview import (
+    NO_MATCHING_ENTRIES_MESSAGE,
+    OverviewPane,
+    OverviewSortMode,
+)
 from expenditui.visualization import VisualizationConfig
 
 
@@ -146,6 +150,111 @@ def test_overview_selection_clamps_when_filter_hides_selected_row() -> None:
             assert table.row_count == 1
             assert table.cursor_row == 0
             assert table.get_row_at(0)[1] == "Rent"
+
+    asyncio.run(run())
+
+
+def test_overview_sort_modes_reorder_visible_rows_and_cycle_to_original() -> None:
+    async def run() -> None:
+        app = ExpendiTUIApp()
+        app.load_state = lambda: None  # type: ignore[method-assign]
+
+        async with app.run_test(size=(120, 30)):
+            app.expenses = {
+                "Streaming": FinancialEntry(
+                    amount=Decimal("12.00"),
+                    frequency=Frequency.MONTHLY,
+                    tags=["Subscription"],
+                ),
+                "Rent": FinancialEntry(
+                    amount=Decimal("900.00"),
+                    frequency=Frequency.MONTHLY,
+                    tags=["Housing"],
+                ),
+            }
+            app.income = {
+                "Bonus": FinancialEntry(
+                    amount=Decimal("100.00"),
+                    frequency=Frequency.ANNUAL,
+                    tags=[],
+                ),
+                "Salary": FinancialEntry(
+                    amount=Decimal("1000.00"),
+                    frequency=Frequency.MONTHLY,
+                    tags=["Work"],
+                ),
+            }
+            overview = app.query_one(OverviewPane)
+            table = overview.query_one("#overview-table", DataTable)
+
+            overview.refresh_view()
+            assert [table.get_row_at(index)[1] for index in range(table.row_count)] == [
+                "Streaming",
+                "Rent",
+                "Bonus",
+                "Salary",
+            ]
+
+            overview.toggle_sort_mode()
+            assert overview.sort_mode is OverviewSortMode.PRIMARY_TAG
+            assert [table.get_row_at(index)[1] for index in range(table.row_count)] == [
+                "Rent",
+                "Streaming",
+                "Salary",
+                "Bonus",
+            ]
+
+            overview.toggle_sort_mode()
+            assert overview.sort_mode is OverviewSortMode.ANNUALIZED_COST
+            assert [table.get_row_at(index)[1] for index in range(table.row_count)] == [
+                "Salary",
+                "Rent",
+                "Streaming",
+                "Bonus",
+            ]
+
+            overview.toggle_sort_mode()
+            assert overview.sort_mode is OverviewSortMode.ALPHABETICAL
+            assert [table.get_row_at(index)[1] for index in range(table.row_count)] == [
+                "Bonus",
+                "Rent",
+                "Salary",
+                "Streaming",
+            ]
+
+            overview.toggle_sort_mode()
+            assert overview.sort_mode is OverviewSortMode.ORIGINAL
+            assert [table.get_row_at(index)[1] for index in range(table.row_count)] == [
+                "Streaming",
+                "Rent",
+                "Bonus",
+                "Salary",
+            ]
+
+    asyncio.run(run())
+
+
+def test_overview_sort_status_line_updates_after_toggle() -> None:
+    async def run() -> None:
+        app = ExpendiTUIApp()
+        app.load_state = lambda: None  # type: ignore[method-assign]
+
+        async with app.run_test(size=(120, 30)) as pilot:
+            message = app.query_one("#app-message")
+
+            assert message.content == "Sort: Original"
+
+            await pilot.press("u")
+            assert message.content == "Sort: Primary Tag"
+
+            await pilot.press("u")
+            assert message.content == "Sort: Annualized Cost"
+
+            app.status_message = "Loaded expense and income entries."
+            app.refresh_message_area()
+            assert message.content == (
+                "Loaded expense and income entries. | Sort: Annualized Cost"
+            )
 
     asyncio.run(run())
 

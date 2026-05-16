@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from enum import Enum
+
 from rich.console import Group
 from rich.text import Text
 from textual import events
@@ -20,10 +22,35 @@ from ..models import EntryType
 from ..theme import AppTheme
 
 NO_MATCHING_ENTRIES_MESSAGE = "No matching entries found."
+ENTRY_TYPE_SORT_ORDER = {EntryType.EXPENSE: 0, EntryType.INCOME: 1}
 
 
 def format_money(value) -> str:
     return f"{value:.2f}"
+
+
+class OverviewSortMode(str, Enum):
+    ORIGINAL = "original"
+    PRIMARY_TAG = "primary_tag"
+    ANNUALIZED_COST = "annualized_cost"
+    ALPHABETICAL = "alphabetical"
+
+    @property
+    def display_name(self) -> str:
+        return {
+            OverviewSortMode.ORIGINAL: "Original",
+            OverviewSortMode.PRIMARY_TAG: "Primary Tag",
+            OverviewSortMode.ANNUALIZED_COST: "Annualized Cost",
+            OverviewSortMode.ALPHABETICAL: "Alphabetical",
+        }[self]
+
+
+SORT_MODE_SEQUENCE = (
+    OverviewSortMode.ORIGINAL,
+    OverviewSortMode.PRIMARY_TAG,
+    OverviewSortMode.ANNUALIZED_COST,
+    OverviewSortMode.ALPHABETICAL,
+)
 
 
 class OverviewPane(Vertical):
@@ -100,6 +127,7 @@ class OverviewPane(Vertical):
         self.filter_service = EntryFilterService()
         self.visible_entries: list[FilteredEntry] = []
         self.selected_row_identity: tuple[EntryType, str] | None = None
+        self.sort_mode = OverviewSortMode.ORIGINAL
 
     def on_mount(self) -> None:
         table = self.query_one("#overview-table", DataTable)
@@ -172,6 +200,7 @@ class OverviewPane(Vertical):
             income=income,
             query=self.search_query,
         )
+        self.visible_entries = self._sort_entries(self.visible_entries)
         for index, row in enumerate(self.visible_entries):
             entry = row.entry
             table.add_row(
@@ -271,6 +300,17 @@ class OverviewPane(Vertical):
     def page_down(self) -> None:
         self.query_one("#overview-table", DataTable).action_page_down()
 
+    def toggle_sort_mode(self) -> None:
+        current_index = SORT_MODE_SEQUENCE.index(self.sort_mode)
+        next_index = (current_index + 1) % len(SORT_MODE_SEQUENCE)
+        self.sort_mode = SORT_MODE_SEQUENCE[next_index]
+        self.refresh_view()
+        self.app.refresh_message_area()
+
+    @property
+    def sort_status_label(self) -> str:
+        return f"Sort: {self.sort_mode.display_name}"
+
     def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id != "overview-search":
             return
@@ -315,6 +355,35 @@ class OverviewPane(Vertical):
             row = self.visible_entries[cursor_row]
             return (row.entry_type, row.name)
         return None
+
+    def _sort_entries(self, rows: list[FilteredEntry]) -> list[FilteredEntry]:
+        if self.sort_mode is OverviewSortMode.ORIGINAL:
+            return rows
+        if self.sort_mode is OverviewSortMode.PRIMARY_TAG:
+            return sorted(
+                rows,
+                key=lambda row: (
+                    row.entry.tags[0].casefold() if row.entry.tags else "\U0010ffff",
+                    row.name.casefold(),
+                    ENTRY_TYPE_SORT_ORDER[row.entry_type],
+                ),
+            )
+        if self.sort_mode is OverviewSortMode.ANNUALIZED_COST:
+            return sorted(
+                rows,
+                key=lambda row: (
+                    -yearly_equivalent(row.entry.amount, row.entry.frequency),
+                    row.name.casefold(),
+                    ENTRY_TYPE_SORT_ORDER[row.entry_type],
+                ),
+            )
+        return sorted(
+            rows,
+            key=lambda row: (
+                row.name.casefold(),
+                ENTRY_TYPE_SORT_ORDER[row.entry_type],
+            ),
+        )
 
     def _restore_table_selection(
         self, previous_identity: tuple[EntryType, str] | None
