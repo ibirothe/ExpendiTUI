@@ -399,6 +399,12 @@ class EditPane(Vertical):
             kind="accent",
         )
 
+    def select_entry(self, entry_type: EntryType, name: str) -> None:
+        self.selection_by_dataset[self.active_dataset] = self.selected_name
+        self.active_dataset = entry_type
+        self.load_from_app(select_name=name)
+        self.focus_table()
+
     def start_create(self) -> None:
         self.modal_origin_name = self.selected_name
         self.modal_target_index = self.current_index + 1 if self.entries else 0

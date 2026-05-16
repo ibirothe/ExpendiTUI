@@ -369,6 +369,21 @@ def test_dataset_toggle_switches_rows_and_preserves_selection() -> None:
     assert pane.selected_name == "insurance"
 
 
+def test_select_entry_switches_dataset_and_focuses_matching_row() -> None:
+    pane, app = build_pane()
+    table = pane.query_one("#edit-table")
+
+    pane.current_index = 1
+    pane.select_entry(EntryType.INCOME, "salary")
+
+    assert pane.active_dataset is EntryType.INCOME
+    assert pane.current_index == 0
+    assert pane.selected_name == "salary"
+    assert pane.selection_by_dataset[EntryType.EXPENSE] == "insurance"
+    assert app.focused is table
+    assert table.cursor_row == 0
+
+
 def test_create_flow_inserts_below_selection_and_selects_new_entry() -> None:
     pane, app = build_pane()
     table = pane.query_one("#edit-table")

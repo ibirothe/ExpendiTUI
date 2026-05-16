@@ -33,6 +33,8 @@ GLOBAL_SHORTCUTS = ShortcutSection(
         ShortcutItem("h", "Open Help tab"),
         ShortcutItem("e", "Open Edit tab"),
         ShortcutItem("s", "Open Settings tab"),
+        ShortcutItem("/", "Show Overview search"),
+        ShortcutItem("enter", "Open selected Overview entry in Edit"),
         ShortcutItem(
             "pgup / pgdn",
             "Scroll contents",
