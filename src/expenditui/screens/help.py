@@ -75,6 +75,21 @@ EDIT_SHORTCUTS = ShortcutSection(
     ),
 )
 
+SETTINGS_SHORTCUTS = ShortcutSection(
+    title="Settings Themes",
+    accent_slot="warning",
+    rows=(
+        ShortcutItem("j / k", "Move the selected theme down or up."),
+        ShortcutItem("enter", "Activate the selected theme or advance form fields."),
+        ShortcutItem("a", "Create a new theme."),
+        ShortcutItem("e", "Edit the selected theme."),
+        ShortcutItem("d", "Delete the selected theme."),
+        ShortcutItem("y / n", "Confirm or cancel theme deletion."),
+        ShortcutItem("tab / shift+tab", "Move between theme form fields."),
+        ShortcutItem("esc", "Cancel theme create, edit, or delete confirmation."),
+    ),
+)
+
 
 class HelpPane(VerticalScroll):
     CSS = """
@@ -93,6 +108,7 @@ class HelpPane(VerticalScroll):
     def compose(self) -> ComposeResult:
         yield Static(id="help-navigation-card", classes="help-section")
         yield Static(id="help-edit-card", classes="help-section")
+        yield Static(id="help-settings-card", classes="help-section")
         yield Static(id="help-callout-theme", classes="help-section")
         yield Static(id="help-callout-reload", classes="help-section")
         yield Static(id="help-callout-settings", classes="help-section")
@@ -109,12 +125,15 @@ class HelpPane(VerticalScroll):
         self.query_one("#help-edit-card", Static).update(
             self._build_shortcut_panel(theme, EDIT_SHORTCUTS)
         )
+        self.query_one("#help-settings-card", Static).update(
+            self._build_shortcut_panel(theme, SETTINGS_SHORTCUTS)
+        )
         self.query_one("#help-callout-theme", Static).update(
             self._build_callout(
                 theme,
                 title="Theme",
                 accent_slot="accent",
-                message="Use t to rotate themes unless a focused edit form is actively typing.",
+                message="Use t to rotate themes unless a focused edit or theme form is actively typing.",
             )
         )
         self.query_one("#help-callout-reload", Static).update(
@@ -130,7 +149,7 @@ class HelpPane(VerticalScroll):
                 theme,
                 title="Settings",
                 accent_slot="muted",
-                message="The new Settings tab is reserved for future configuration screens.",
+                message="Use Settings to create, edit, delete, and activate persisted themes.",
             )
         )
 

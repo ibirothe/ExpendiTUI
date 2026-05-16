@@ -114,8 +114,8 @@ def test_direct_tab_actions_are_hidden_only_for_active_tab() -> None:
     assert app.check_action("show_settings", ()) is False
     assert app.check_action("focus_overview_search", ()) is False
     assert app.check_action("toggle_overview_sort", ()) is False
-    assert app.check_action("scroll_active_page_up", ()) is False
-    assert app.check_action("scroll_active_page_down", ()) is False
+    assert app.check_action("scroll_active_page_up", ()) is True
+    assert app.check_action("scroll_active_page_down", ()) is True
     assert app.check_action("back", ()) is True
 
 
@@ -144,6 +144,31 @@ def test_cycle_theme_action_respects_edit_form_blocking(monkeypatch) -> None:
 
     monkeypatch.setattr(app, "theme_switch_blocks_global_actions", lambda: False)
     assert app.check_action("cycle_theme", ()) is True
+
+
+def test_settings_modal_blocks_global_navigation_actions(monkeypatch) -> None:
+    app = ExpendiTUIApp()
+    app.active_tab_id = SETTINGS_TAB
+
+    monkeypatch.setattr(app, "settings_mode_blocks_global_actions", lambda: True)
+
+    assert app.check_action("show_overview", ()) is False
+    assert app.check_action("show_help", ()) is False
+    assert app.check_action("show_edit", ()) is False
+    assert app.check_action("scroll_active_page_up", ()) is False
+    assert app.check_action("scroll_active_page_down", ()) is False
+    assert app.check_action("reload", ()) is False
+    assert app.check_action("focus_overview_search", ()) is False
+    assert app.check_action("toggle_overview_sort", ()) is False
+    assert app.check_action("back", ()) is False
+
+
+def test_cycle_theme_action_respects_settings_form_blocking(monkeypatch) -> None:
+    app = ExpendiTUIApp()
+    app.active_tab_id = SETTINGS_TAB
+
+    monkeypatch.setattr(app, "theme_switch_blocks_global_actions", lambda: True)
+    assert app.check_action("cycle_theme", ()) is False
 
 
 def test_tab_activation_stays_on_edit_when_modal_state_blocks_navigation(
@@ -232,6 +257,10 @@ def test_active_page_scroll_actions_target_active_tab(monkeypatch) -> None:
         scroll_page_up=lambda **kwargs: calls.append(f"up:{kwargs}"),
         scroll_page_down=lambda **kwargs: calls.append(f"down:{kwargs}"),
     )
+    settings = SimpleNamespace(
+        page_up=lambda: calls.append("settings:up"),
+        page_down=lambda: calls.append("settings:down"),
+    )
 
     def fake_query_one(selector, *_args):
         if hasattr(selector, "__name__") and selector.__name__ == "OverviewPane":
@@ -240,6 +269,8 @@ def test_active_page_scroll_actions_target_active_tab(monkeypatch) -> None:
             return edit
         if hasattr(selector, "__name__") and selector.__name__ == "HelpPane":
             return help_pane
+        if hasattr(selector, "__name__") and selector.__name__ == "SettingsPane":
+            return settings
         raise AssertionError(f"Unexpected selector: {selector!r}")
 
     monkeypatch.setattr(app, "query_one", fake_query_one)
@@ -256,6 +287,10 @@ def test_active_page_scroll_actions_target_active_tab(monkeypatch) -> None:
     app.action_scroll_active_page_up()
     app.action_scroll_active_page_down()
 
+    app.active_tab_id = SETTINGS_TAB
+    app.action_scroll_active_page_up()
+    app.action_scroll_active_page_down()
+
     assert calls == [
         "overview:up",
         "overview:down",
@@ -263,6 +298,8 @@ def test_active_page_scroll_actions_target_active_tab(monkeypatch) -> None:
         "edit:down",
         "up:{'animate': False}",
         "down:{'animate': False}",
+        "settings:up",
+        "settings:down",
     ]
 
 

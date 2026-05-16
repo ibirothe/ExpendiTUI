@@ -130,6 +130,10 @@ rows, the app falls back to built-in themes and remains usable.
 
 Built-in themes include `Dreamy`, `Sandstone`, and `Nord`.
 
+Themes can be created, edited, deleted, and activated from the Settings tab.
+The first theme change writes the currently loaded themes plus the change to
+`themes.json`.
+
 If `visualizations.json` is missing, malformed, or contains unsupported values,
 the app falls back to a safe default `income_vs_expense` bar comparison and
 remains usable. If the file exists but is empty or contains only `{}`, the
@@ -181,20 +185,21 @@ ExpendiTUI has four visible tabs:
 - `Overview` shows all saved expense and income entries with monthly and yearly totals and savings. Use search to filter entries by name or tag.
 - `Edit` uses a modal workflow for create, edit, move, and delete operations.
 - `Help` shows the available keyboard shortcuts in a structured guide.
-- `Settings` is reserved for future configuration options.
+- `Settings` manages persisted color themes.
 
-Use `o`, `h`, and `e` to open Overview, Help, and Edit directly. The active tab
-is highlighted by Textual's tab widget. Press `enter` on an Overview row to open
-the matching entry in Edit.
+Use `o`, `h`, `e`, and `s` to open Overview, Help, Edit, and Settings directly.
+The active tab is highlighted by Textual's tab widget. Press `enter` on an
+Overview row to open the matching entry in Edit.
 
 ## Keyboard Shortcuts
 
 - `q` quit the application
 - `r` reload the JSON file from disk
-- `t` cycle themes globally, except while Edit is in create, edit, or move mode
+- `t` cycle themes globally, except while Edit or Settings forms are active
 - `o` open the Overview tab
 - `h` open the Help tab
 - `e` open the Edit tab
+- `s` open the Settings tab
 - `/` show Overview search
 - `enter` open the selected Overview entry in Edit
 - `j` / `k` move the selected Edit row down or up
@@ -211,7 +216,10 @@ the matching entry in Edit.
 - `enter` advance fields, add or create tags, and submit from an empty tag field
 - `backspace` remove the last attached tag when the tag input is empty
 - `y` / `n` confirm or cancel deletion in Edit
-- `esc` hide and clear Overview search, cancel the active Edit modal, or return to Overview from Edit or Help
+- In Settings, use `a` to create a theme, `e` to edit the selected theme, `d` to delete it, and `enter` to activate it.
+- In Settings theme forms, use `tab` / `shift+tab` to move between fields and `esc` to cancel.
+- In Settings delete confirmation, use `y` / `n` to confirm or cancel deletion.
+- `esc` hide and clear Overview search, cancel the active Edit or Settings modal, or return to Overview from Edit, Help, or Settings
 
 ## JSON Format
 
