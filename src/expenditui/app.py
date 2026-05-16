@@ -12,6 +12,11 @@ from .screens.edit import EditPane
 from .screens.help import HelpPane
 from .screens.overview import OverviewPane
 from .screens.settings import SettingsPane
+from .settings_data import (
+    SettingsDataManager,
+    SettingsDeletionCategory,
+    format_deletion_error,
+)
 from .storage import (
     StorageError,
     get_dataset_path,
@@ -100,6 +105,7 @@ class ExpendiTUIApp(App[None]):
         self.theme_manager = ThemeManager()
         self.visualization_manager = VisualizationConfigManager()
         self.visualization_renderer = VisualizationRenderer()
+        self.settings_data_manager = SettingsDataManager(self)
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -151,6 +157,13 @@ class ExpendiTUIApp(App[None]):
             and self.edit_mode_blocks_global_actions()
         ):
             self.query_one("#main-tabs", TabbedContent).active = EDIT_TAB
+            return
+        if (
+            self.active_tab_id == SETTINGS_TAB
+            and next_tab_id != SETTINGS_TAB
+            and self.settings_mode_blocks_global_actions()
+        ):
+            self.query_one("#main-tabs", TabbedContent).active = SETTINGS_TAB
             return
 
         leaving_overview = (
@@ -286,21 +299,21 @@ class ExpendiTUIApp(App[None]):
         self.refresh_bindings()
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        if (
-            action
-            in {
-                "reload",
-                "show_overview",
-                "show_help",
-                "show_settings",
-                "back",
-                "focus_overview_search",
-                "toggle_overview_sort",
-                "open_overview_selection_in_edit",
-                "scroll_active_page_up",
-                "scroll_active_page_down",
-            }
-            and self.edit_mode_blocks_global_actions()
+        if action in {
+            "reload",
+            "show_overview",
+            "show_edit",
+            "show_help",
+            "show_settings",
+            "back",
+            "focus_overview_search",
+            "toggle_overview_sort",
+            "open_overview_selection_in_edit",
+            "scroll_active_page_up",
+            "scroll_active_page_down",
+        } and (
+            self.edit_mode_blocks_global_actions()
+            or self.settings_mode_blocks_global_actions()
         ):
             return False
         if action == "cycle_theme":
@@ -341,7 +354,12 @@ class ExpendiTUIApp(App[None]):
             except (NoMatches, ScreenStackError):
                 return False
         if action in {"scroll_active_page_up", "scroll_active_page_down"}:
-            return self.active_tab_id in {OVERVIEW_TAB, EDIT_TAB, HELP_TAB}
+            return self.active_tab_id in {
+                OVERVIEW_TAB,
+                EDIT_TAB,
+                HELP_TAB,
+                SETTINGS_TAB,
+            }
         return super().check_action(action, parameters)
 
     def edit_mode_blocks_global_actions(self) -> bool:
@@ -353,10 +371,23 @@ class ExpendiTUIApp(App[None]):
             return False
 
     def theme_switch_blocks_global_actions(self) -> bool:
-        if self.active_tab_id != EDIT_TAB:
+        if self.active_tab_id == EDIT_TAB:
+            try:
+                return self.query_one(EditPane).blocks_theme_switch
+            except ScreenStackError:
+                return False
+        if self.active_tab_id == SETTINGS_TAB:
+            try:
+                return self.query_one(SettingsPane).blocks_theme_switch
+            except ScreenStackError:
+                return False
+        return False
+
+    def settings_mode_blocks_global_actions(self) -> bool:
+        if self.active_tab_id != SETTINGS_TAB:
             return False
         try:
-            return self.query_one(EditPane).blocks_theme_switch
+            return self.query_one(SettingsPane).blocks_app_navigation
         except ScreenStackError:
             return False
 
@@ -384,6 +415,8 @@ class ExpendiTUIApp(App[None]):
             self.query_one(EditPane).page_up()
         elif self.active_tab_id == HELP_TAB:
             self.query_one(HelpPane).scroll_page_up(animate=False)
+        elif self.active_tab_id == SETTINGS_TAB:
+            self.query_one(SettingsPane).page_up()
 
     def action_scroll_active_page_down(self) -> None:
         if self.active_tab_id == OVERVIEW_TAB:
@@ -392,6 +425,8 @@ class ExpendiTUIApp(App[None]):
             self.query_one(EditPane).page_down()
         elif self.active_tab_id == HELP_TAB:
             self.query_one(HelpPane).scroll_page_down(animate=False)
+        elif self.active_tab_id == SETTINGS_TAB:
+            self.query_one(SettingsPane).page_down()
 
     def action_focus_overview_search(self) -> None:
         if self.active_tab_id != OVERVIEW_TAB:
@@ -482,6 +517,25 @@ class ExpendiTUIApp(App[None]):
 
     def reload_visualizations(self) -> VisualizationConfig:
         return self.visualization_manager.reload()
+
+    def delete_settings_data(self, category: SettingsDeletionCategory) -> str | None:
+        try:
+            if category is SettingsDeletionCategory.DELETE_FINANCIAL_DATA:
+                self.settings_data_manager.delete_financial_data()
+            elif category is SettingsDeletionCategory.DELETE_THEMES:
+                self.settings_data_manager.delete_themes()
+            elif category is SettingsDeletionCategory.DELETE_VISUALIZATIONS:
+                self.settings_data_manager.delete_visualizations()
+            elif category is SettingsDeletionCategory.DELETE_RECOMMENDED_TAGS:
+                self.settings_data_manager.delete_recommended_tags()
+            else:
+                raise ValueError(f"Unsupported deletion category: {category}.")
+        except (OSError, StorageError, ValueError) as exc:
+            self.last_error = format_deletion_error(exc)
+            self.status_message = None
+            self.refresh_message_area()
+            return self.last_error
+        return None
 
     def render_overview_visualization(
         self, available_width: int

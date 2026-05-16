@@ -25,6 +25,8 @@ THEME_SLOT_NAMES = (
     "muted",
 )
 HEX_COLOR_PATTERN = re.compile(r"^#(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$")
+THEME_FORM_HEX_COLOR_PATTERN = re.compile(r"^#[0-9A-Fa-f]{6}$")
+MAX_THEME_NAME_LENGTH = 64
 BUILTIN_THEME_ROWS: tuple[tuple[str, ...], ...] = (
     (
         "Dreamy",
@@ -184,6 +186,60 @@ class ThemeManager:
         self.persist_selection()
         return self.active_theme
 
+    def set_active(self, index: int) -> AppTheme:
+        if not 0 <= index < len(self.themes):
+            raise ValueError("Theme index is out of range.")
+        self.active_index = index
+        self.persist_selection()
+        return self.active_theme
+
+    def create_theme(
+        self, name: str, colors: list[str] | tuple[str, ...], *, activate: bool = True
+    ) -> AppTheme:
+        theme = self._build_validated_theme(name, colors)
+        updated_themes = [*self.themes, theme]
+        self._persist_theme_list(updated_themes)
+        self.themes = updated_themes
+        if activate:
+            self.active_index = len(self.themes) - 1
+            self.persist_selection()
+        return theme
+
+    def update_theme(
+        self, index: int, name: str, colors: list[str] | tuple[str, ...]
+    ) -> AppTheme:
+        if not 0 <= index < len(self.themes):
+            raise ValueError("Theme index is out of range.")
+        theme = self._build_validated_theme(name, colors, existing_index=index)
+        updated_themes = list(self.themes)
+        updated_themes[index] = theme
+        self._persist_theme_list(updated_themes)
+        self.themes = updated_themes
+        if self.active_index == index:
+            self.persist_selection()
+        return theme
+
+    def delete_theme(self, index: int) -> AppTheme:
+        if not 0 <= index < len(self.themes):
+            raise ValueError("Theme index is out of range.")
+        if len(self.themes) <= 1:
+            raise ValueError("At least one theme must remain.")
+
+        updated_themes = list(self.themes)
+        removed = updated_themes.pop(index)
+        if index < self.active_index:
+            next_active_index = self.active_index - 1
+        elif index == self.active_index:
+            next_active_index = min(index, len(updated_themes) - 1)
+        else:
+            next_active_index = self.active_index
+
+        self._persist_theme_list(updated_themes)
+        self.themes = updated_themes
+        self.active_index = next_active_index
+        self.persist_selection()
+        return removed
+
     def persist_selection(self) -> None:
         payload = {
             "theme_name": self.active_theme.name,
@@ -201,6 +257,96 @@ class ThemeManager:
                 exc.strerror or exc,
             )
 
+    def persist_themes(self) -> None:
+        self._persist_theme_list(self.themes)
+
+    def reset_to_builtins(self) -> None:
+        builtin_themes = self._builtin_themes()
+        self._persist_selection_strict(
+            theme_name=builtin_themes[0].name,
+            theme_index=0,
+        )
+        self.themes_path.unlink(missing_ok=True)
+        self.themes = builtin_themes
+        self.active_index = 0
+
+    def _persist_theme_list(self, themes: list[AppTheme]) -> None:
+        rows = [self._theme_to_row(theme) for theme in themes]
+        payload = f"{json.dumps(rows, indent=2)}\n"
+        self.themes_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = self.themes_path.with_name(f".{self.themes_path.name}.tmp")
+        temp_path.write_text(payload, encoding="utf-8")
+        temp_path.replace(self.themes_path)
+
+    def _persist_selection_strict(
+        self,
+        *,
+        theme_name: str | None = None,
+        theme_index: int | None = None,
+    ) -> None:
+        payload = {
+            "theme_name": self.active_theme.name if theme_name is None else theme_name,
+            "theme_index": self.active_index if theme_index is None else theme_index,
+        }
+        self.state_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = self.state_path.with_name(f".{self.state_path.name}.tmp")
+        temp_path.write_text(f"{json.dumps(payload, indent=2)}\n", encoding="utf-8")
+        temp_path.replace(self.state_path)
+
+    def _build_validated_theme(
+        self,
+        name: str,
+        colors: list[str] | tuple[str, ...],
+        *,
+        existing_index: int | None = None,
+    ) -> AppTheme:
+        normalized_name = self._validate_theme_name(name, existing_index)
+        normalized_colors = self._validate_theme_colors(colors)
+        return AppTheme(
+            name=normalized_name,
+            **dict(zip(THEME_SLOT_NAMES, normalized_colors, strict=True)),
+        )
+
+    def _validate_theme_name(self, name: str, existing_index: int | None = None) -> str:
+        if not isinstance(name, str):
+            raise ValueError("Theme name is required.")
+        normalized_name = name.strip()
+        if not normalized_name:
+            raise ValueError("Theme name is required.")
+        if len(normalized_name) > MAX_THEME_NAME_LENGTH:
+            raise ValueError(
+                f"Theme name must be {MAX_THEME_NAME_LENGTH} characters or fewer."
+            )
+        normalized_key = normalized_name.casefold()
+        for index, theme in enumerate(self.themes):
+            if existing_index is not None and index == existing_index:
+                continue
+            if theme.name.casefold() == normalized_key:
+                raise ValueError(f"Theme name '{normalized_name}' already exists.")
+        return normalized_name
+
+    def _validate_theme_colors(self, colors: list[str] | tuple[str, ...]) -> list[str]:
+        if len(colors) != len(THEME_SLOT_NAMES):
+            raise ValueError(f"Theme requires {len(THEME_SLOT_NAMES)} colors.")
+        normalized_colors: list[str] = []
+        for slot_name, color in zip(THEME_SLOT_NAMES, colors, strict=True):
+            if not isinstance(color, str):
+                raise ValueError(f"{slot_name.title()} color is required.")
+            normalized_color = color.strip().upper()
+            if not THEME_FORM_HEX_COLOR_PATTERN.fullmatch(normalized_color):
+                raise ValueError(f"{slot_name.title()} must be a #RRGGBB hex color.")
+            normalized_colors.append(normalized_color)
+        return normalized_colors
+
+    def _theme_to_row(self, theme: AppTheme) -> list[str]:
+        return [
+            theme.name,
+            *(
+                _rgb_to_hex(_hex_to_rgb(theme.color(slot_name)))
+                for slot_name in THEME_SLOT_NAMES
+            ),
+        ]
+
     def _load_themes(self) -> list[AppTheme]:
         loaded = self._load_themes_from_file()
         if loaded:
@@ -209,6 +355,9 @@ class ThemeManager:
             logger.warning("Using built-in default themes.")
         else:
             logger.info("Using built-in default themes.")
+        return self._builtin_themes()
+
+    def _builtin_themes(self) -> list[AppTheme]:
         return [
             AppTheme.from_row(list(row), source=f"built-in theme {index}")
             for index, row in enumerate(BUILTIN_THEME_ROWS, start=1)
