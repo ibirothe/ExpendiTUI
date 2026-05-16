@@ -178,13 +178,14 @@ while `tag_distribution` keeps its expense-focused default.
 
 ExpendiTUI has four visible tabs:
 
-- `Overview` shows all saved expense and income entries with monthly and yearly totals and savings.
+- `Overview` shows all saved expense and income entries with monthly and yearly totals and savings. Use search to filter entries by name or tag.
 - `Edit` uses a modal workflow for create, edit, move, and delete operations.
 - `Help` shows the available keyboard shortcuts in a structured guide.
 - `Settings` is reserved for future configuration options.
 
 Use `o`, `h`, and `e` to open Overview, Help, and Edit directly. The active tab
-is highlighted by Textual's tab widget.
+is highlighted by Textual's tab widget. Press `enter` on an Overview row to open
+the matching entry in Edit.
 
 ## Keyboard Shortcuts
 
@@ -194,6 +195,8 @@ is highlighted by Textual's tab widget.
 - `o` open the Overview tab
 - `h` open the Help tab
 - `e` open the Edit tab
+- `/` show Overview search
+- `enter` open the selected Overview entry in Edit
 - `j` / `k` move the selected Edit row down or up
 - `i` toggle between expenses and income while in Edit navigation mode
 - `m` enter move mode for the selected row in Edit
@@ -208,7 +211,7 @@ is highlighted by Textual's tab widget.
 - `enter` advance fields, add or create tags, and submit from an empty tag field
 - `backspace` remove the last attached tag when the tag input is empty
 - `y` / `n` confirm or cancel deletion in Edit
-- `esc` cancel the active Edit modal, or return to Overview from Edit or Help
+- `esc` hide and clear Overview search, cancel the active Edit modal, or return to Overview from Edit or Help
 
 ## JSON Format
 

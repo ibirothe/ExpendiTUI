@@ -3,6 +3,7 @@ from __future__ import annotations
 from textual.app import ScreenStackError
 from textual.app import App, ComposeResult
 from textual.binding import Binding
+from textual.css.query import NoMatches
 from textual.widgets import Footer, Header, Static, TabbedContent, TabPane
 
 from .constants import APP_TITLE
@@ -47,6 +48,13 @@ class ExpendiTUIApp(App[None]):
         Binding("e", "show_edit", "Edit"),
         Binding("h", "show_help", "Help"),
         Binding("s", "show_settings", "Settings"),
+        Binding("/", "focus_overview_search", "Search"),
+        Binding(
+            "enter",
+            "open_overview_selection_in_edit",
+            "Edit Entry",
+            show=False,
+        ),
         Binding("pageup", "scroll_active_page_up", "Page Up", show=False),
         Binding("pagedown", "scroll_active_page_down", "Page Down", show=False),
         Binding("t", "cycle_theme", "Theme"),
@@ -144,7 +152,12 @@ class ExpendiTUIApp(App[None]):
             self.query_one("#main-tabs", TabbedContent).active = EDIT_TAB
             return
 
+        leaving_overview = (
+            self.active_tab_id == OVERVIEW_TAB and next_tab_id != OVERVIEW_TAB
+        )
         self.active_tab_id = next_tab_id
+        if leaving_overview:
+            self.query_one(OverviewPane).hide_search(clear=True, focus_table=False)
         if self.active_tab_id == OVERVIEW_TAB:
             self.query_one(OverviewPane).refresh_view()
         self.refresh_bindings()
@@ -260,6 +273,8 @@ class ExpendiTUIApp(App[None]):
         return tags
 
     def switch_to_tab(self, tab_id: str) -> None:
+        if self.active_tab_id == OVERVIEW_TAB and tab_id != OVERVIEW_TAB:
+            self.query_one(OverviewPane).hide_search(clear=True, focus_table=False)
         self.active_tab_id = tab_id
         self.query_one("#main-tabs", TabbedContent).active = tab_id
         self.refresh_bindings()
@@ -278,6 +293,8 @@ class ExpendiTUIApp(App[None]):
                 "show_help",
                 "show_settings",
                 "back",
+                "focus_overview_search",
+                "open_overview_selection_in_edit",
                 "scroll_active_page_up",
                 "scroll_active_page_down",
             }
@@ -296,6 +313,24 @@ class ExpendiTUIApp(App[None]):
             return self.active_tab_id != HELP_TAB
         if action == "show_settings":
             return self.active_tab_id != SETTINGS_TAB
+        if action == "focus_overview_search":
+            if self.active_tab_id != OVERVIEW_TAB:
+                return False
+            try:
+                return not self.query_one(OverviewPane).search_has_focus
+            except (NoMatches, ScreenStackError):
+                return True
+        if action == "open_overview_selection_in_edit":
+            if self.active_tab_id != OVERVIEW_TAB:
+                return False
+            try:
+                overview = self.query_one(OverviewPane)
+                return (
+                    not overview.search_has_focus
+                    and overview.selected_entry_identity is not None
+                )
+            except (NoMatches, ScreenStackError):
+                return False
         if action in {"scroll_active_page_up", "scroll_active_page_down"}:
             return self.active_tab_id in {OVERVIEW_TAB, EDIT_TAB, HELP_TAB}
         return super().check_action(action, parameters)
@@ -349,6 +384,26 @@ class ExpendiTUIApp(App[None]):
         elif self.active_tab_id == HELP_TAB:
             self.query_one(HelpPane).scroll_page_down(animate=False)
 
+    def action_focus_overview_search(self) -> None:
+        if self.active_tab_id != OVERVIEW_TAB:
+            return
+        self.query_one(OverviewPane).focus_search()
+
+    def action_open_overview_selection_in_edit(self) -> None:
+        if self.active_tab_id != OVERVIEW_TAB:
+            return
+        self.open_overview_selection_in_edit()
+
+    def open_overview_selection_in_edit(self) -> None:
+        overview = self.query_one(OverviewPane)
+        selection = overview.selected_entry_identity
+        if selection is None:
+            return
+        entry_type, name = selection
+        self.switch_to_tab(EDIT_TAB)
+        edit_pane = self.query_one(EditPane)
+        edit_pane.select_entry(entry_type, name)
+
     def action_cycle_theme(self) -> None:
         if self.theme_switch_blocks_global_actions():
             return
@@ -358,6 +413,11 @@ class ExpendiTUIApp(App[None]):
         self.refresh_bindings()
 
     def action_back(self) -> None:
+        if self.active_tab_id == OVERVIEW_TAB:
+            overview = self.query_one(OverviewPane)
+            if overview.search_has_focus:
+                overview.hide_search()
+                return
         self.switch_to_overview()
 
     def action_quit(self) -> None:

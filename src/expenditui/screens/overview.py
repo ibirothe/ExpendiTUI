@@ -5,7 +5,7 @@ from rich.text import Text
 from textual import events
 from textual.app import ComposeResult
 from textual.containers import Vertical
-from textual.widgets import DataTable, Static
+from textual.widgets import DataTable, Input, Static
 
 from ..calculations import (
     monthly_equivalent,
@@ -15,8 +15,11 @@ from ..calculations import (
     total_yearly,
     yearly_equivalent,
 )
-from ..constants import APP_TITLE
+from ..filtering import EntryFilterService, FilteredEntry
+from ..models import EntryType
 from ..theme import AppTheme
+
+NO_MATCHING_ENTRIES_MESSAGE = "No matching entries found."
 
 
 def format_money(value) -> str:
@@ -62,6 +65,15 @@ class OverviewPane(Vertical):
         padding: 1 2 0 2;
     }
 
+    #overview-search {
+        height: 3;
+        margin: 1 2 0 2;
+    }
+
+    .hidden {
+        display: none;
+    }
+
     #overview-table {
         height: 1fr;
         min-height: 0;
@@ -74,7 +86,20 @@ class OverviewPane(Vertical):
             yield Static(id="overview-totals")
         with Vertical(id="overview-visualization-section", classes="overview-section"):
             yield Static(id="overview-visualization")
+        yield Input(
+            placeholder="Search entries or tags",
+            id="overview-search",
+            classes="hidden",
+        )
         yield DataTable(id="overview-table")
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.search_query = ""
+        self.search_visible = False
+        self.filter_service = EntryFilterService()
+        self.visible_entries: list[FilteredEntry] = []
+        self.selected_row_identity: tuple[EntryType, str] | None = None
 
     def on_mount(self) -> None:
         table = self.query_one("#overview-table", DataTable)
@@ -87,6 +112,7 @@ class OverviewPane(Vertical):
             "Frequency",
             "Monthly Equivalent",
             "Yearly Equivalent",
+            "Tags",
         )
         self.refresh_view()
 
@@ -116,6 +142,10 @@ class OverviewPane(Vertical):
             background=theme.surface,
             color=theme.foreground,
         )
+        self.query_one("#overview-search", Input).set_styles(
+            background=theme.surface,
+            color=theme.foreground,
+        )
         self.query_one("#overview-visualization", Static).set_styles(
             background=visualization_background,
             color=theme.foreground,
@@ -132,28 +162,42 @@ class OverviewPane(Vertical):
 
     def refresh_view(self) -> None:
         table = self.query_one("#overview-table", DataTable)
+        previous_identity = self.selected_row_identity or self._cursor_identity()
         table.clear(columns=False)
 
         expenses = self.app.expenses
         income = self.app.income
-        for name, entry in expenses.items():
+        self.visible_entries = self.filter_service.filter_entries(
+            expenses=expenses,
+            income=income,
+            query=self.search_query,
+        )
+        for index, row in enumerate(self.visible_entries):
+            entry = row.entry
             table.add_row(
-                "Expense",
-                name,
+                row.entry_type.display_name,
+                row.name,
                 format_money(entry.amount),
                 entry.frequency.value,
                 format_money(monthly_equivalent(entry.amount, entry.frequency)),
                 format_money(yearly_equivalent(entry.amount, entry.frequency)),
+                ", ".join(entry.tags),
+                key=f"row-{index}",
             )
-        for name, entry in income.items():
+        if not self.visible_entries and self.filter_service.normalize_query(
+            self.search_query
+        ):
             table.add_row(
-                "Income",
-                name,
-                format_money(entry.amount),
-                entry.frequency.value,
-                format_money(monthly_equivalent(entry.amount, entry.frequency)),
-                format_money(yearly_equivalent(entry.amount, entry.frequency)),
+                NO_MATCHING_ENTRIES_MESSAGE,
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                key="no-results",
             )
+        self._restore_table_selection(previous_identity)
 
         monthly_expenses = total_monthly(expenses)
         yearly_expenses = total_yearly(expenses)
@@ -189,11 +233,66 @@ class OverviewPane(Vertical):
         )
         self.query_one("#overview-totals", Static).update(totals)
 
+    def focus_search(self) -> None:
+        self.show_search()
+        search = self.query_one("#overview-search", Input)
+        search.focus()
+
+    @property
+    def search_has_focus(self) -> bool:
+        return self.app.focused is self.query_one("#overview-search", Input)
+
+    @property
+    def selected_entry_identity(self) -> tuple[EntryType, str] | None:
+        return self.selected_row_identity or self._cursor_identity()
+
+    def focus_table(self) -> None:
+        table = self.query_one("#overview-table", DataTable)
+        table.focus()
+
+    def show_search(self) -> None:
+        self.search_visible = True
+        self.query_one("#overview-search", Input).set_class(False, "hidden")
+
+    def hide_search(self, *, clear: bool = True, focus_table: bool = True) -> None:
+        search = self.query_one("#overview-search", Input)
+        self.search_visible = False
+        search.set_class(True, "hidden")
+        if clear:
+            self.search_query = ""
+            search.value = ""
+            self.refresh_view()
+        if focus_table:
+            self.focus_table()
+
     def page_up(self) -> None:
         self.query_one("#overview-table", DataTable).action_page_up()
 
     def page_down(self) -> None:
         self.query_one("#overview-table", DataTable).action_page_down()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id != "overview-search":
+            return
+        self.search_query = event.value
+        self.refresh_view()
+
+    def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        self._set_selected_identity_from_event(event.row_key)
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        self._set_selected_identity_from_event(event.row_key)
+
+    def on_key(self, event: events.Key) -> None:
+        if event.key == "escape" and self.search_has_focus:
+            event.stop()
+            event.prevent_default()
+            self.hide_search()
+            return
+        if event.key == "enter" and not self.search_has_focus:
+            event.stop()
+            event.prevent_default()
+            self.app.open_overview_selection_in_edit()
 
     def _refresh_visualization(self) -> None:
         section = self.query_one("#overview-visualization-section", Vertical)
@@ -208,3 +307,43 @@ class OverviewPane(Vertical):
             return
         section.display = True
         widget.update(Group(*lines))
+
+    def _cursor_identity(self) -> tuple[EntryType, str] | None:
+        table = self.query_one("#overview-table", DataTable)
+        cursor_row = table.cursor_row
+        if 0 <= cursor_row < len(self.visible_entries):
+            row = self.visible_entries[cursor_row]
+            return (row.entry_type, row.name)
+        return None
+
+    def _restore_table_selection(
+        self, previous_identity: tuple[EntryType, str] | None
+    ) -> None:
+        table = self.query_one("#overview-table", DataTable)
+        if not self.visible_entries:
+            self.selected_row_identity = None
+            return
+
+        target_index = 0
+        if previous_identity is not None:
+            for index, row in enumerate(self.visible_entries):
+                if (row.entry_type, row.name) == previous_identity:
+                    target_index = index
+                    break
+
+        table.move_cursor(row=target_index, column=0, animate=False)
+        row = self.visible_entries[target_index]
+        self.selected_row_identity = (row.entry_type, row.name)
+
+    def _set_selected_identity_from_event(self, row_key: object) -> None:
+        value = getattr(row_key, "value", row_key)
+        if value is None or value == "no-results":
+            self.selected_row_identity = None
+            return
+        try:
+            index = int(str(value).removeprefix("row-"))
+        except ValueError:
+            return
+        if 0 <= index < len(self.visible_entries):
+            row = self.visible_entries[index]
+            self.selected_row_identity = (row.entry_type, row.name)
