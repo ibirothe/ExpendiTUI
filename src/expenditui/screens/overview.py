@@ -196,12 +196,15 @@ class OverviewPane(Vertical):
         self.query_one("#overview-table", DataTable).action_page_down()
 
     def _refresh_visualization(self) -> None:
+        section = self.query_one("#overview-visualization-section", Vertical)
         widget = self.query_one("#overview-visualization", Static)
         available_width = widget.size.width or self.size.width or self.app.size.width
         result = self.app.render_overview_visualization(available_width)
 
         lines = [*result.lines, *result.legend]
         if not lines:
+            section.display = False
             widget.update("")
             return
+        section.display = True
         widget.update(Group(*lines))
