@@ -260,6 +260,16 @@ class ThemeManager:
     def persist_themes(self) -> None:
         self._persist_theme_list(self.themes)
 
+    def reset_to_builtins(self) -> None:
+        builtin_themes = self._builtin_themes()
+        self._persist_selection_strict(
+            theme_name=builtin_themes[0].name,
+            theme_index=0,
+        )
+        self.themes_path.unlink(missing_ok=True)
+        self.themes = builtin_themes
+        self.active_index = 0
+
     def _persist_theme_list(self, themes: list[AppTheme]) -> None:
         rows = [self._theme_to_row(theme) for theme in themes]
         payload = f"{json.dumps(rows, indent=2)}\n"
@@ -267,6 +277,21 @@ class ThemeManager:
         temp_path = self.themes_path.with_name(f".{self.themes_path.name}.tmp")
         temp_path.write_text(payload, encoding="utf-8")
         temp_path.replace(self.themes_path)
+
+    def _persist_selection_strict(
+        self,
+        *,
+        theme_name: str | None = None,
+        theme_index: int | None = None,
+    ) -> None:
+        payload = {
+            "theme_name": self.active_theme.name if theme_name is None else theme_name,
+            "theme_index": self.active_index if theme_index is None else theme_index,
+        }
+        self.state_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = self.state_path.with_name(f".{self.state_path.name}.tmp")
+        temp_path.write_text(f"{json.dumps(payload, indent=2)}\n", encoding="utf-8")
+        temp_path.replace(self.state_path)
 
     def _build_validated_theme(
         self,
@@ -330,6 +355,9 @@ class ThemeManager:
             logger.warning("Using built-in default themes.")
         else:
             logger.info("Using built-in default themes.")
+        return self._builtin_themes()
+
+    def _builtin_themes(self) -> list[AppTheme]:
         return [
             AppTheme.from_row(list(row), source=f"built-in theme {index}")
             for index, row in enumerate(BUILTIN_THEME_ROWS, start=1)

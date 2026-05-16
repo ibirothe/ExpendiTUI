@@ -7,8 +7,9 @@ from rich.text import Text
 from textual import events
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.widgets import DataTable, Input, Label, Static
+from textual.widgets import Button, DataTable, Input, Label, Static
 
+from ..settings_data import SettingsDeletionCategory
 from ..theme import AppTheme, THEME_SLOT_NAMES
 
 
@@ -23,6 +24,7 @@ class SettingsMode(str, Enum):
     CREATE_THEME = "create_theme"
     EDIT_THEME = "edit_theme"
     CONFIRM_DELETE_THEME = "confirm_delete_theme"
+    CONFIRM_DELETE_DATA = "confirm_delete_data"
 
 
 FORM_GLOBAL_SHORTCUT_KEYS = {
@@ -40,6 +42,48 @@ FORM_GLOBAL_SHORTCUT_KEYS = {
 
 class ThemeDeleteDialog(Static, can_focus=True):
     pass
+
+
+@dataclass(frozen=True, slots=True)
+class DeletionAction:
+    category: SettingsDeletionCategory
+    button_label: str
+    prompt: str
+    success_message: str
+
+
+DELETE_FINANCIAL_BUTTON_ID = "delete-financial-data"
+DELETE_THEMES_BUTTON_ID = "delete-themes"
+DELETE_VISUALIZATIONS_BUTTON_ID = "delete-visualizations"
+DELETE_RECOMMENDED_TAGS_BUTTON_ID = "delete-recommended-tags"
+
+DELETION_ACTIONS = {
+    DELETE_FINANCIAL_BUTTON_ID: DeletionAction(
+        SettingsDeletionCategory.DELETE_FINANCIAL_DATA,
+        "Delete Data",
+        "Delete all financial data? (y/n)",
+        "Deleted financial data.",
+    ),
+    DELETE_THEMES_BUTTON_ID: DeletionAction(
+        SettingsDeletionCategory.DELETE_THEMES,
+        "Reset Theme",
+        "Delete persisted themes and reset to built-in defaults? (y/n)",
+        "Reset themes to built-in defaults.",
+    ),
+    DELETE_VISUALIZATIONS_BUTTON_ID: DeletionAction(
+        SettingsDeletionCategory.DELETE_VISUALIZATIONS,
+        "Reset Visualization",
+        "Delete visualization settings and restore defaults? (y/n)",
+        "Reset visualizations to default configuration.",
+    ),
+    DELETE_RECOMMENDED_TAGS_BUTTON_ID: DeletionAction(
+        SettingsDeletionCategory.DELETE_RECOMMENDED_TAGS,
+        "Clear Tags",
+        "Clear tags and restore only tags used by saved entries? (y/n)",
+        "Cleared unused tags.",
+    ),
+}
+DANGER_BUTTON_IDS = tuple(DELETION_ACTIONS)
 
 
 class ThemeForm(VerticalScroll):
@@ -133,6 +177,19 @@ class SettingsPane(Vertical):
         content-align: center middle;
     }
 
+    #danger-zone {
+        margin: 1 1 0 1;
+        padding: 0 1;
+        height: auto;
+        layout: horizontal;
+        align: left middle;
+    }
+
+    #danger-zone Button {
+        width: auto;
+        margin-right: 1;
+    }
+
     #settings-message {
         min-height: 2;
         padding: 0 2 1 2;
@@ -149,6 +206,7 @@ class SettingsPane(Vertical):
         self.mode = SettingsMode.NAVIGATION
         self.modal_origin_index = 0
         self.modal_target_index: int | None = None
+        self.pending_deletion_action: DeletionAction | None = None
         self.message_kind = "foreground"
 
     def compose(self) -> ComposeResult:
@@ -156,6 +214,12 @@ class SettingsPane(Vertical):
         with Horizontal(id="settings-body"):
             yield DataTable(id="theme-table")
             yield ThemeForm(id="theme-form", classes="hidden")
+        with Horizontal(id="danger-zone"):
+            for button_id, action in DELETION_ACTIONS.items():
+                yield Button(
+                    action.button_label,
+                    id=button_id,
+                )
         yield ThemeDeleteDialog(id="theme-delete-confirm", classes="hidden")
         yield Static(id="settings-message")
 
@@ -261,12 +325,28 @@ class SettingsPane(Vertical):
         dialog.focus()
         self.set_message("")
 
+    def start_data_delete_confirmation(self, action_id: str) -> None:
+        action = DELETION_ACTIONS.get(action_id)
+        if action is None:
+            return
+        self.modal_origin_index = self.current_index
+        self.modal_target_index = None
+        self.pending_deletion_action = action
+        self.mode = SettingsMode.CONFIRM_DELETE_DATA
+        dialog = self.query_one("#theme-delete-confirm", ThemeDeleteDialog)
+        dialog.update(action.prompt)
+        self.refresh_table()
+        self._update_mode_ui()
+        dialog.focus()
+        self.set_message("")
+
     def cancel_modal(self) -> None:
         self.mode = SettingsMode.NAVIGATION
         self.current_index = max(
             0, min(self.modal_origin_index, len(self.app.theme_manager.themes) - 1)
         )
         self.modal_target_index = None
+        self.pending_deletion_action = None
         self._update_mode_ui()
         self.refresh_table()
         self.focus_table()
@@ -316,6 +396,8 @@ class SettingsPane(Vertical):
         theme_name = self.app.theme_manager.themes[self.current_index].name
         self.mode = SettingsMode.NAVIGATION
         self.modal_target_index = None
+        self.pending_deletion_action = None
+        self._update_mode_ui()
         self._after_theme_change()
         self.focus_table()
         self.set_message(f"{action} theme: {theme_name}.", kind="success")
@@ -334,9 +416,36 @@ class SettingsPane(Vertical):
         self.current_index = min(target_index, len(self.app.theme_manager.themes) - 1)
         self.mode = SettingsMode.NAVIGATION
         self.modal_target_index = None
+        self.pending_deletion_action = None
+        self._update_mode_ui()
         self._after_theme_change()
         self.focus_table()
         self.set_message(f"Deleted theme: {removed.name}.", kind="success")
+
+    def confirm_data_delete(self) -> None:
+        if (
+            self.mode is not SettingsMode.CONFIRM_DELETE_DATA
+            or self.pending_deletion_action is None
+        ):
+            return
+
+        action = self.pending_deletion_action
+        delete_settings_data = getattr(self.app, "delete_settings_data", None)
+        if not callable(delete_settings_data):
+            self.set_message("Data deletion is unavailable.", kind="error")
+            return
+
+        error = delete_settings_data(action.category)
+        if error:
+            self.set_message(error, kind="error")
+            return
+
+        self.mode = SettingsMode.NAVIGATION
+        self.pending_deletion_action = None
+        self.modal_target_index = None
+        self.refresh_theme_state()
+        self.focus_table()
+        self.set_message(action.success_message, kind="success")
 
     def focus_table(self) -> None:
         if not self.is_mounted:
@@ -363,11 +472,24 @@ class SettingsPane(Vertical):
         event.stop()
         self.submit_form()
 
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        button_id = event.button.id
+        if (
+            self.mode is not SettingsMode.NAVIGATION
+            or button_id not in DELETION_ACTIONS
+        ):
+            return
+        event.stop()
+        self.start_data_delete_confirmation(button_id)
+
     def on_key(self, event: events.Key) -> None:
         if self.mode is SettingsMode.NAVIGATION:
             self._handle_navigation_key(event)
             return
         if self.mode is SettingsMode.CONFIRM_DELETE_THEME:
+            self._handle_confirmation_key(event)
+            return
+        if self.mode is SettingsMode.CONFIRM_DELETE_DATA:
             self._handle_confirmation_key(event)
             return
 
@@ -393,7 +515,10 @@ class SettingsPane(Vertical):
             return
 
         character = (event.character or "").lower()
-        if event.key in {"pageup", "pagedown"} or character in FORM_GLOBAL_SHORTCUT_KEYS:
+        if (
+            event.key in {"pageup", "pagedown"}
+            or character in FORM_GLOBAL_SHORTCUT_KEYS
+        ):
             event.stop()
 
     def _handle_navigation_key(self, event: events.Key) -> None:
@@ -423,7 +548,33 @@ class SettingsPane(Vertical):
             event.prevent_default()
             self.start_delete_confirmation()
             return
+        if event.key == "tab":
+            event.stop()
+            event.prevent_default()
+            self.focus_next_danger_control()
+            return
+        if event.key == "shift+tab":
+            event.stop()
+            event.prevent_default()
+            self.focus_previous_danger_control()
+            return
+        if event.key == "right" and self._focused_danger_button_id() is not None:
+            event.stop()
+            event.prevent_default()
+            self.focus_relative_danger_button(1)
+            return
+        if event.key == "left" and self._focused_danger_button_id() is not None:
+            event.stop()
+            event.prevent_default()
+            self.focus_relative_danger_button(-1)
+            return
         if event.key == "enter":
+            focused_button_id = self._focused_danger_button_id()
+            if focused_button_id is not None:
+                event.stop()
+                event.prevent_default()
+                self.start_data_delete_confirmation(focused_button_id)
+                return
             event.stop()
             event.prevent_default()
             self.activate_selected_theme()
@@ -433,7 +584,10 @@ class SettingsPane(Vertical):
         event.prevent_default()
         character = (event.character or "").lower()
         if character == "y":
-            self.confirm_delete()
+            if self.mode is SettingsMode.CONFIRM_DELETE_THEME:
+                self.confirm_delete()
+            else:
+                self.confirm_data_delete()
         elif character == "n" or event.key == "escape":
             self.cancel_modal()
 
@@ -451,7 +605,10 @@ class SettingsPane(Vertical):
         form_visible = self.mode in {SettingsMode.CREATE_THEME, SettingsMode.EDIT_THEME}
         form.set_class(not form_visible, "hidden")
         form.display = form_visible
-        dialog_hidden = self.mode is not SettingsMode.CONFIRM_DELETE_THEME
+        dialog_hidden = self.mode not in {
+            SettingsMode.CONFIRM_DELETE_THEME,
+            SettingsMode.CONFIRM_DELETE_DATA,
+        }
         dialog.set_class(dialog_hidden, "hidden")
         dialog.display = not dialog_hidden
         if dialog_hidden:
@@ -462,9 +619,65 @@ class SettingsPane(Vertical):
             SettingsMode.CREATE_THEME: "Settings - Create Theme",
             SettingsMode.EDIT_THEME: "Settings - Edit Theme",
             SettingsMode.CONFIRM_DELETE_THEME: "Settings - Confirm Delete",
+            SettingsMode.CONFIRM_DELETE_DATA: "Settings - Confirm Data Deletion",
         }[self.mode]
         title.update(title_text)
         self._refresh_app_bindings()
+
+    def focus_next_danger_control(self) -> None:
+        focused_index = self._focused_danger_button_index()
+        buttons = self._danger_buttons()
+        if not buttons:
+            return
+        if focused_index is None:
+            buttons[0].focus()
+            return
+        if focused_index >= len(buttons) - 1:
+            self.focus_table()
+            return
+        buttons[focused_index + 1].focus()
+
+    def focus_previous_danger_control(self) -> None:
+        focused_index = self._focused_danger_button_index()
+        buttons = self._danger_buttons()
+        if not buttons:
+            return
+        if focused_index is None:
+            buttons[-1].focus()
+            return
+        if focused_index <= 0:
+            self.focus_table()
+            return
+        buttons[focused_index - 1].focus()
+
+    def focus_relative_danger_button(self, delta: int) -> None:
+        focused_index = self._focused_danger_button_index()
+        buttons = self._danger_buttons()
+        if focused_index is None or not buttons:
+            return
+        target_index = max(0, min(focused_index + delta, len(buttons) - 1))
+        buttons[target_index].focus()
+
+    def _danger_buttons(self) -> list[Button]:
+        return [
+            button for button in self.query(Button) if button.id in DELETION_ACTIONS
+        ]
+
+    def _focused_danger_button_id(self) -> str | None:
+        focused = self.app.focused
+        focused_id = getattr(focused, "id", None)
+        if focused_id in DELETION_ACTIONS:
+            return focused_id
+        return None
+
+    def _focused_danger_button_index(self) -> int | None:
+        focused_button_id = self._focused_danger_button_id()
+        if focused_button_id is None:
+            return None
+        try:
+            return DANGER_BUTTON_IDS.index(focused_button_id)
+        except ValueError:
+            return None
 
     def _after_theme_change(self) -> None:
         self.refresh_table()
@@ -539,6 +752,13 @@ class SettingsPane(Vertical):
         dialog.styles.background = theme.surface
         dialog.styles.color = theme.foreground
         dialog.styles.border = ("round", theme.warning)
+        danger_zone = self.query_one("#danger-zone", Horizontal)
+        danger_zone.set_styles(
+            background=theme.surface,
+            color=theme.error,
+        )
+        danger_zone.styles.border = ("round", theme.error)
+        self._apply_danger_button_theme(theme)
         for label in self.query(".field-label"):
             label.styles.color = theme.muted
         self.query_one("#settings-message", Static).set_styles(
@@ -546,6 +766,24 @@ class SettingsPane(Vertical):
             color=self._message_color(self.message_kind),
         )
         self.refresh_theme_state()
+
+    def _apply_danger_button_theme(self, theme: AppTheme) -> None:
+        slot_by_button_id = {
+            DELETE_FINANCIAL_BUTTON_ID: "error",
+            DELETE_THEMES_BUTTON_ID: "warning",
+            DELETE_VISUALIZATIONS_BUTTON_ID: "accent",
+            DELETE_RECOMMENDED_TAGS_BUTTON_ID: "success",
+        }
+        for button in self._danger_buttons():
+            slot_name = slot_by_button_id.get(button.id)
+            if slot_name is None:
+                continue
+            color = theme.color(slot_name)
+            button.set_styles(
+                background=color,
+                color=theme.background,
+            )
+            button.styles.border = ("tall", color)
 
     def _message_color(self, kind: str) -> str:
         slot_name = {

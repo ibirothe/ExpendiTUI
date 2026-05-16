@@ -12,6 +12,11 @@ from .screens.edit import EditPane
 from .screens.help import HelpPane
 from .screens.overview import OverviewPane
 from .screens.settings import SettingsPane
+from .settings_data import (
+    SettingsDataManager,
+    SettingsDeletionCategory,
+    format_deletion_error,
+)
 from .storage import (
     StorageError,
     get_dataset_path,
@@ -100,6 +105,7 @@ class ExpendiTUIApp(App[None]):
         self.theme_manager = ThemeManager()
         self.visualization_manager = VisualizationConfigManager()
         self.visualization_renderer = VisualizationRenderer()
+        self.settings_data_manager = SettingsDataManager(self)
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -511,6 +517,25 @@ class ExpendiTUIApp(App[None]):
 
     def reload_visualizations(self) -> VisualizationConfig:
         return self.visualization_manager.reload()
+
+    def delete_settings_data(self, category: SettingsDeletionCategory) -> str | None:
+        try:
+            if category is SettingsDeletionCategory.DELETE_FINANCIAL_DATA:
+                self.settings_data_manager.delete_financial_data()
+            elif category is SettingsDeletionCategory.DELETE_THEMES:
+                self.settings_data_manager.delete_themes()
+            elif category is SettingsDeletionCategory.DELETE_VISUALIZATIONS:
+                self.settings_data_manager.delete_visualizations()
+            elif category is SettingsDeletionCategory.DELETE_RECOMMENDED_TAGS:
+                self.settings_data_manager.delete_recommended_tags()
+            else:
+                raise ValueError(f"Unsupported deletion category: {category}.")
+        except (OSError, StorageError, ValueError) as exc:
+            self.last_error = format_deletion_error(exc)
+            self.status_message = None
+            self.refresh_message_area()
+            return self.last_error
+        return None
 
     def render_overview_visualization(
         self, available_width: int

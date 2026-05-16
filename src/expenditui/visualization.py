@@ -109,6 +109,11 @@ class VisualizationConfigManager:
         self.config = self._load()
         return self.config
 
+    def reset_to_default(self) -> VisualizationConfig:
+        self.path.unlink(missing_ok=True)
+        self.config = VisualizationConfig.default()
+        return self.config
+
     def _load(self) -> VisualizationConfig:
         if not self.path.exists():
             logger.info(

@@ -3,12 +3,18 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from expenditui.screens.settings import (
+    DANGER_BUTTON_IDS,
+    DELETE_FINANCIAL_BUTTON_ID,
+    DELETE_RECOMMENDED_TAGS_BUTTON_ID,
+    DELETE_THEMES_BUTTON_ID,
+    DELETE_VISUALIZATIONS_BUTTON_ID,
     DraftTheme,
     SettingsMode,
     SettingsPane,
     ThemeDeleteDialog,
     ThemeForm,
 )
+from expenditui.settings_data import SettingsDeletionCategory
 from expenditui.theme import AppTheme, THEME_SLOT_NAMES
 
 
@@ -26,11 +32,29 @@ class FakeKeyEvent:
         self.default_prevented = True
 
 
+class FakeButtonPressEvent:
+    def __init__(self, button_id: str) -> None:
+        self.button = SimpleNamespace(id=button_id)
+        self.stopped = False
+
+    def stop(self) -> None:
+        self.stopped = True
+
+
 class FakeInput:
     def __init__(self, app: "FakeApp", input_id: str, value: str = "") -> None:
         self.app = app
         self.id = input_id
         self.value = value
+
+    def focus(self) -> None:
+        self.app.focused = self
+
+
+class FakeButton:
+    def __init__(self, app: "FakeApp", button_id: str) -> None:
+        self.app = app
+        self.id = button_id
 
     def focus(self) -> None:
         self.app.focused = self
@@ -72,9 +96,7 @@ class FakeForm:
         self.inputs = {
             "#theme-name-input": FakeInput(app, "theme-name-input"),
             **{
-                f"#theme-color-{slot_name}": FakeInput(
-                    app, f"theme-color-{slot_name}"
-                )
+                f"#theme-color-{slot_name}": FakeInput(app, f"theme-color-{slot_name}")
                 for slot_name in THEME_SLOT_NAMES
             },
         }
@@ -138,7 +160,9 @@ class FakeTable:
     def clear(self, *, columns: bool = False) -> None:
         self.rows.clear()
 
-    def add_row(self, active: object, name: object, preview: object, *, key: str) -> None:
+    def add_row(
+        self, active: object, name: object, preview: object, *, key: str
+    ) -> None:
         self.rows.append((active, name, preview))
 
     def move_cursor(self, *, row: int, column: int, animate: bool = False) -> None:
@@ -206,6 +230,9 @@ class FakeThemeManager:
         self.themes[index] = theme
         return theme
 
+    def delete_theme(self, index: int) -> AppTheme:
+        return self.themes.pop(index)
+
 
 class FakeApp:
     def __init__(self) -> None:
@@ -213,6 +240,8 @@ class FakeApp:
         self.theme_manager = FakeThemeManager()
         self.active_theme = self.theme_manager.active_theme
         self.refresh_bindings_calls = 0
+        self.deleted_categories: list[SettingsDeletionCategory] = []
+        self.delete_error: str | None = None
 
     def theme_color(self, slot_name: str) -> str:
         return self.active_theme.color(slot_name)
@@ -233,6 +262,10 @@ class FakeApp:
     def refresh_bindings(self) -> None:
         self.refresh_bindings_calls += 1
 
+    def delete_settings_data(self, category: SettingsDeletionCategory) -> str | None:
+        self.deleted_categories.append(category)
+        return self.delete_error
+
 
 class StubSettingsPane(SettingsPane):
     def __init__(self, app: FakeApp) -> None:
@@ -240,10 +273,14 @@ class StubSettingsPane(SettingsPane):
         self._test_nodes = {
             "#settings-title": FakeStatic(app),
             "#theme-table": FakeTable(app),
+            "#danger-zone": FakeStatic(app),
             "#theme-delete-confirm": FakeDialog(app),
             "#settings-message": FakeStatic(app),
             ThemeForm: FakeForm(app),
         }
+        self._test_buttons = [
+            FakeButton(app, button_id) for button_id in DANGER_BUTTON_IDS
+        ]
         super().__init__()
 
     @property
@@ -257,7 +294,9 @@ class StubSettingsPane(SettingsPane):
     def query_one(self, selector: object, _cls: object | None = None) -> object:
         return self._test_nodes[selector]
 
-    def query(self, selector: str) -> list[object]:
+    def query(self, selector: object) -> list[object]:
+        if getattr(selector, "__name__", None) == "Button":
+            return self._test_buttons
         return []
 
 
@@ -280,7 +319,9 @@ def test_navigation_mode_does_not_display_theme_form() -> None:
     assert dialog.display is False
 
 
-def test_create_theme_form_stops_navigation_keys_without_blocking_input_default() -> None:
+def test_create_theme_form_stops_navigation_keys_without_blocking_input_default() -> (
+    None
+):
     pane, _app = build_pane()
     form = pane.query_one(ThemeForm)
 
@@ -371,3 +412,99 @@ def test_delete_confirmation_hides_form_and_blocks_navigation_key_default() -> N
     assert pane.mode is SettingsMode.CONFIRM_DELETE_THEME
     assert form.has_class("hidden")
     assert form.display is False
+
+
+def test_data_delete_confirmation_requires_y_to_execute() -> None:
+    pane, app = build_pane()
+    event = FakeButtonPressEvent(DELETE_FINANCIAL_BUTTON_ID)
+
+    pane.on_button_pressed(event)  # type: ignore[arg-type]
+
+    assert event.stopped
+    assert pane.mode is SettingsMode.CONFIRM_DELETE_DATA
+    assert app.deleted_categories == []
+
+    pane.on_key(FakeKeyEvent("y"))
+
+    assert app.deleted_categories == [SettingsDeletionCategory.DELETE_FINANCIAL_DATA]
+    assert pane.mode is SettingsMode.NAVIGATION
+
+
+def test_tab_focuses_danger_zone_buttons_and_enter_opens_confirmation() -> None:
+    pane, app = build_pane()
+
+    tab_event = FakeKeyEvent("tab", character="")
+    pane.on_key(tab_event)
+
+    assert tab_event.stopped
+    assert tab_event.default_prevented
+    assert getattr(app.focused, "id", None) == DELETE_FINANCIAL_BUTTON_ID
+
+    right_event = FakeKeyEvent("right", character="")
+    pane.on_key(right_event)
+
+    assert right_event.stopped
+    assert right_event.default_prevented
+    assert getattr(app.focused, "id", None) == DELETE_THEMES_BUTTON_ID
+
+    enter_event = FakeKeyEvent("enter", character="")
+    pane.on_key(enter_event)
+
+    assert enter_event.stopped
+    assert enter_event.default_prevented
+    assert pane.mode is SettingsMode.CONFIRM_DELETE_DATA
+    assert app.deleted_categories == []
+
+
+def test_shift_tab_from_first_danger_button_returns_to_theme_table() -> None:
+    pane, app = build_pane()
+
+    pane.focus_next_danger_control()
+    pane.on_key(FakeKeyEvent("shift+tab", character=""))
+
+    assert isinstance(app.focused, FakeTable)
+
+
+def test_data_delete_confirmation_can_be_cancelled_with_n_or_escape() -> None:
+    pane, app = build_pane()
+
+    pane.on_button_pressed(  # type: ignore[arg-type]
+        FakeButtonPressEvent(DELETE_RECOMMENDED_TAGS_BUTTON_ID)
+    )
+    pane.on_key(FakeKeyEvent("n"))
+
+    assert app.deleted_categories == []
+    assert pane.mode is SettingsMode.NAVIGATION
+
+    pane.on_button_pressed(  # type: ignore[arg-type]
+        FakeButtonPressEvent(DELETE_VISUALIZATIONS_BUTTON_ID)
+    )
+    pane.on_key(FakeKeyEvent("escape", character=""))
+
+    assert app.deleted_categories == []
+    assert pane.mode is SettingsMode.NAVIGATION
+
+
+def test_data_delete_error_keeps_confirmation_open() -> None:
+    pane, app = build_pane()
+    app.delete_error = "disk full"
+
+    pane.on_button_pressed(  # type: ignore[arg-type]
+        FakeButtonPressEvent(DELETE_THEMES_BUTTON_ID)
+    )
+    pane.on_key(FakeKeyEvent("y"))
+
+    assert app.deleted_categories == [SettingsDeletionCategory.DELETE_THEMES]
+    assert pane.mode is SettingsMode.CONFIRM_DELETE_DATA
+    assert pane.query_one("#settings-message").renderable == "disk full"
+
+
+def test_number_keys_do_not_trigger_data_delete_confirmation() -> None:
+    pane, app = build_pane()
+
+    event = FakeKeyEvent("1")
+    pane.on_key(event)
+
+    assert not event.stopped
+    assert pane.mode is SettingsMode.NAVIGATION
+    assert app.deleted_categories == []
