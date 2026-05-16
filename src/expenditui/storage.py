@@ -153,7 +153,7 @@ def save_entries(entry_type: EntryType, data: Mapping[str, FinancialEntry]) -> N
 
 def load_tag_registry() -> TagLoadResult:
     path = get_tags_path()
-    registry = TagRegistry(DEFAULT_TAGS)
+    default_registry = TagRegistry(DEFAULT_TAGS)
     diagnostics: list[str] = []
     needs_save = False
 
@@ -162,10 +162,14 @@ def load_tag_registry() -> TagLoadResult:
     except OSError as exc:
         message = f"Could not prepare {path.parent}: {exc.strerror or exc}."
         logger.warning(message)
-        return TagLoadResult(registry=registry, diagnostics=[message], needs_save=False)
+        return TagLoadResult(
+            registry=default_registry,
+            diagnostics=[message],
+            needs_save=False,
+        )
 
     if not path.exists():
-        return TagLoadResult(registry=registry, diagnostics=[], needs_save=True)
+        return TagLoadResult(registry=default_registry, diagnostics=[], needs_save=True)
 
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -175,19 +179,31 @@ def load_tag_registry() -> TagLoadResult:
             f"column {exc.colno}."
         )
         logger.warning(message)
-        return TagLoadResult(registry=registry, diagnostics=[message], needs_save=True)
+        return TagLoadResult(
+            registry=default_registry,
+            diagnostics=[message],
+            needs_save=True,
+        )
     except OSError as exc:
         message = f"Could not read {path}: {exc.strerror or exc}."
         logger.warning(message)
-        return TagLoadResult(registry=registry, diagnostics=[message], needs_save=False)
+        return TagLoadResult(
+            registry=default_registry,
+            diagnostics=[message],
+            needs_save=False,
+        )
 
     if not isinstance(data, list):
         message = f"Invalid data in {path}: expected a JSON array."
         logger.warning(message)
-        return TagLoadResult(registry=registry, diagnostics=[message], needs_save=True)
+        return TagLoadResult(
+            registry=default_registry,
+            diagnostics=[message],
+            needs_save=True,
+        )
 
+    registry = TagRegistry()
     seen: set[str] = set()
-    file_tag_keys: set[str] = set()
     for index, raw_tag in enumerate(data, start=1):
         try:
             tag = validate_tag(raw_tag)
@@ -198,13 +214,9 @@ def load_tag_registry() -> TagLoadResult:
             if tag_key in seen:
                 needs_save = True
             seen.add(tag_key)
-            file_tag_keys.add(tag_key)
         except ValueError as exc:
             diagnostics.append(f"Skipped tag {index} from {path.name}: {exc}")
             needs_save = True
-
-    if any(normalize_tag_key(tag) not in file_tag_keys for tag in DEFAULT_TAGS):
-        needs_save = True
 
     if diagnostics:
         logger.warning(

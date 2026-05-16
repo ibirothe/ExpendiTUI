@@ -4,6 +4,7 @@ from decimal import Decimal
 import pytest
 
 from expenditui.app import ExpendiTUIApp
+from expenditui.constants import DEFAULT_TAGS
 from expenditui.models import EntryType, ExpenseEntry
 from expenditui.storage import (
     StorageError,
@@ -15,7 +16,7 @@ from expenditui.storage import (
     save_income,
     save_tag_registry,
 )
-from expenditui.tags import TagRegistry
+from expenditui.tags import TagRegistry, normalize_tag_key, validate_tag
 
 
 def test_load_missing_file_creates_empty_json(tmp_path, monkeypatch) -> None:
@@ -239,9 +240,65 @@ def test_missing_tags_file_recovers_with_defaults(tmp_path, monkeypatch) -> None
 
     result = load_tag_registry()
 
-    assert result.registry.to_list() == ["bank", "cash", "paypal"]
+    assert result.registry.to_list() == sorted(DEFAULT_TAGS, key=str.casefold)
     assert result.needs_save is True
     assert result.diagnostics == []
+
+
+def test_default_tags_are_valid_and_unique() -> None:
+    normalized_keys = [normalize_tag_key(validate_tag(tag)) for tag in DEFAULT_TAGS]
+
+    assert len(normalized_keys) == len(set(normalized_keys))
+
+
+def test_existing_tags_file_does_not_reseed_deleted_defaults(
+    tmp_path, monkeypatch
+) -> None:
+    tags_path = tmp_path / "tags.json"
+    tags_path.write_text(json.dumps(["Custom"], indent=2), encoding="utf-8")
+    monkeypatch.setattr("expenditui.storage.get_tags_path", lambda: tags_path)
+
+    result = load_tag_registry()
+
+    assert result.registry.to_list() == ["Custom"]
+    assert result.needs_save is False
+    assert result.diagnostics == []
+
+
+def test_existing_empty_tags_array_is_preserved(tmp_path, monkeypatch) -> None:
+    tags_path = tmp_path / "tags.json"
+    tags_path.write_text("[]\n", encoding="utf-8")
+    monkeypatch.setattr("expenditui.storage.get_tags_path", lambda: tags_path)
+
+    result = load_tag_registry()
+
+    assert result.registry.to_list() == []
+    assert result.needs_save is False
+    assert result.diagnostics == []
+
+
+def test_app_load_state_creates_default_tags_on_first_startup(
+    tmp_path, monkeypatch
+) -> None:
+    expenses_path = tmp_path / "expenses.json"
+    income_path = tmp_path / "income.json"
+    tags_path = tmp_path / "tags.json"
+    monkeypatch.setattr("expenditui.storage.get_expenses_path", lambda: expenses_path)
+    monkeypatch.setattr("expenditui.storage.get_income_path", lambda: income_path)
+    monkeypatch.setattr("expenditui.storage.get_tags_path", lambda: tags_path)
+    monkeypatch.setattr("expenditui.app.get_expenses_path", lambda: expenses_path)
+    monkeypatch.setattr("expenditui.app.get_income_path", lambda: income_path)
+
+    app = ExpendiTUIApp()
+
+    error = app.load_state()
+
+    assert error is None
+    assert tags_path.exists()
+    assert json.loads(tags_path.read_text(encoding="utf-8")) == sorted(
+        DEFAULT_TAGS,
+        key=str.casefold,
+    )
 
 
 def test_malformed_tags_file_recovers_without_crashing(tmp_path, monkeypatch) -> None:
@@ -251,7 +308,7 @@ def test_malformed_tags_file_recovers_without_crashing(tmp_path, monkeypatch) ->
 
     result = load_tag_registry()
 
-    assert result.registry.to_list() == ["bank", "cash", "paypal"]
+    assert result.registry.to_list() == sorted(DEFAULT_TAGS, key=str.casefold)
     assert result.needs_save is True
     assert "Invalid JSON" in result.diagnostics[0]
 
@@ -321,9 +378,7 @@ def test_app_load_state_reconciles_entry_tags_into_registry(
     assert app.get_tag_registry().canonicalize("housing") == "Housing"
     assert app.get_tag_registry().canonicalize("work") == "Work"
     assert json.loads(tags_path.read_text(encoding="utf-8")) == [
-        "bank",
         "cash",
         "Housing",
-        "paypal",
         "Work",
     ]
