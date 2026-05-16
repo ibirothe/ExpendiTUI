@@ -573,6 +573,141 @@ def test_delete_confirmation_escape_cancels_without_mutating_entries() -> None:
     assert list(app.expenses) == ["rent", "insurance"]
 
 
+def test_move_mode_reorders_rows_and_persists_on_enter() -> None:
+    pane, app = build_pane()
+    table = pane.query_one("#edit-table")
+
+    pane.on_key(FakeKeyEvent("m"))
+
+    assert pane.mode is EditMode.MOVE
+    assert pane.blocks_app_navigation is True
+    assert pane.blocks_theme_switch is True
+    assert pane.modal_target_index == 0
+    assert "MOVING" in str(table.rows[0][0])
+    assert "MOVE MODE" in pane.query_one("#edit-title").renderable
+    assert app.focused is table
+
+    pane.on_key(FakeKeyEvent("down", character=""))
+
+    assert [entry.name for entry in pane.entries] == ["insurance", "rent"]
+    assert pane.current_index == 1
+    assert pane.selected_name == "rent"
+    assert "MOVING" in str(table.rows[1][0])
+
+    pane.on_key(FakeKeyEvent("enter", character=""))
+
+    assert pane.mode is EditMode.NAVIGATION
+    assert list(app.expenses) == ["insurance", "rent"]
+    assert app.saved_dataset is EntryType.EXPENSE
+    assert app.saved_payload is not None
+    assert list(app.saved_payload) == ["insurance", "rent"]
+    assert pane.selected_name == "rent"
+    assert app.refresh_views_calls == 1
+    assert app.focused is table
+
+
+def test_move_mode_supports_jk_and_escape_rolls_back_without_persisting() -> None:
+    pane, app = build_pane()
+    pane.current_index = 1
+
+    pane.start_move()
+    pane.on_key(FakeKeyEvent("k"))
+
+    assert [entry.name for entry in pane.entries] == ["insurance", "rent"]
+    assert pane.current_index == 0
+    assert pane.selected_name == "insurance"
+
+    pane.on_key(FakeKeyEvent("escape", character=""))
+
+    assert pane.mode is EditMode.NAVIGATION
+    assert [entry.name for entry in pane.entries] == ["rent", "insurance"]
+    assert list(app.expenses) == ["rent", "insurance"]
+    assert app.saved_payload is None
+    assert pane.current_index == 1
+    assert pane.selected_name == "insurance"
+
+
+def test_move_mode_boundaries_and_unsupported_keys_do_not_reorder() -> None:
+    pane, app = build_pane()
+
+    pane.start_move()
+    pane.on_key(FakeKeyEvent("up", character=""))
+    pane.on_key(FakeKeyEvent("m"))
+    pane.on_key(FakeKeyEvent("i"))
+
+    assert pane.mode is EditMode.MOVE
+    assert [entry.name for entry in pane.entries] == ["rent", "insurance"]
+    assert pane.active_dataset is EntryType.EXPENSE
+
+    pane.on_key(FakeKeyEvent("down", character=""))
+    pane.on_key(FakeKeyEvent("down", character=""))
+
+    assert [entry.name for entry in pane.entries] == ["insurance", "rent"]
+    assert pane.current_index == 1
+    assert list(app.expenses) == ["rent", "insurance"]
+
+
+def test_move_mode_empty_and_single_entry_lists_are_stable() -> None:
+    app = FakeApp({}, {"salary": build_income()["salary"]})
+    pane = StubEditPane(app)
+    pane.load_from_app()
+
+    pane.start_move()
+
+    assert pane.mode is EditMode.NAVIGATION
+    assert pane.query_one("#edit-message").renderable == ("There is no entry to move.")
+
+    pane.toggle_dataset()
+    pane.start_move()
+    pane.on_key(FakeKeyEvent("down", character=""))
+    pane.on_key(FakeKeyEvent("enter", character=""))
+
+    assert pane.mode is EditMode.NAVIGATION
+    assert list(app.income) == ["salary"]
+    assert app.saved_dataset is EntryType.INCOME
+    assert pane.selected_name == "salary"
+
+
+def test_move_mode_keeps_dataset_ordering_independent() -> None:
+    pane, app = build_pane()
+
+    pane.toggle_dataset()
+    pane.start_create()
+    form = pane.query_one(EntryForm)
+    form.query_one("#name-input").value = "bonus"
+    form.query_one("#amount-input").value = "500.00"
+    form.query_one("#frequency-input").value = "annual"
+    pane.submit_form()
+    pane.current_index = 1
+    pane.start_move()
+    pane.on_key(FakeKeyEvent("k"))
+    pane.on_key(FakeKeyEvent("enter", character=""))
+
+    assert list(app.income) == ["bonus", "salary"]
+    assert list(app.expenses) == ["rent", "insurance"]
+    assert app.saved_dataset is EntryType.INCOME
+
+
+def test_move_mode_save_failure_keeps_temporary_order_until_canceled() -> None:
+    pane, app = build_pane()
+    app.save_state = lambda entry_type, data: "disk full"  # type: ignore[method-assign]
+
+    pane.start_move()
+    pane.on_key(FakeKeyEvent("j"))
+    pane.on_key(FakeKeyEvent("enter", character=""))
+
+    assert pane.mode is EditMode.MOVE
+    assert [entry.name for entry in pane.entries] == ["insurance", "rent"]
+    assert pane.query_one("#edit-message").renderable == "disk full"
+    assert app.refresh_views_calls == 0
+    assert list(app.expenses) == ["rent", "insurance"]
+
+    pane.on_key(FakeKeyEvent("escape", character=""))
+
+    assert pane.mode is EditMode.NAVIGATION
+    assert [entry.name for entry in pane.entries] == ["rent", "insurance"]
+
+
 def test_submitted_input_advances_fields_and_empty_tag_submit_persists() -> None:
     pane, app = build_pane()
     pane.start_create()

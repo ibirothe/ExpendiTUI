@@ -139,6 +139,29 @@ def test_valid_json_load_save_roundtrip(tmp_path, monkeypatch) -> None:
     assert reloaded["insurance"].frequency.value == "annual"
 
 
+def test_entry_order_roundtrips_through_storage(tmp_path, monkeypatch) -> None:
+    expenses_path = tmp_path / "expenses.json"
+    income_path = tmp_path / "income.json"
+    monkeypatch.setattr("expenditui.storage.get_expenses_path", lambda: expenses_path)
+    monkeypatch.setattr("expenditui.storage.get_income_path", lambda: income_path)
+
+    save_expenses(
+        {
+            "insurance": ExpenseEntry(amount="600.00", frequency="annual"),
+            "rent": ExpenseEntry(amount="1200.00", frequency="monthly"),
+        }
+    )
+    save_income(
+        {
+            "bonus": ExpenseEntry(amount="500.00", frequency="annual"),
+            "salary": ExpenseEntry(amount="3200.00", frequency="monthly"),
+        }
+    )
+
+    assert list(load_expenses()) == ["insurance", "rent"]
+    assert list(load_income()) == ["bonus", "salary"]
+
+
 def test_invalid_json_is_reported(tmp_path, monkeypatch) -> None:
     expenses_path = tmp_path / "expenses.json"
     expenses_path.write_text("{ invalid json", encoding="utf-8")
