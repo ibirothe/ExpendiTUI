@@ -58,14 +58,11 @@ def test_direct_navigation_actions_switch_to_expected_tabs(monkeypatch) -> None:
     assert overview_calls == 1
 
 
-def test_reload_action_refreshes_visualization_config(monkeypatch) -> None:
+def test_reload_action_refreshes_loaded_state_and_views(monkeypatch) -> None:
     app = ExpendiTUIApp()
     calls: list[str] = []
 
     monkeypatch.setattr(app, "load_state", lambda: calls.append("load"))
-    monkeypatch.setattr(
-        app, "reload_visualizations", lambda: calls.append("visualizations")
-    )
     monkeypatch.setattr(
         app,
         "refresh_views",
@@ -74,7 +71,7 @@ def test_reload_action_refreshes_visualization_config(monkeypatch) -> None:
 
     app.action_reload()
 
-    assert calls == ["load", "visualizations", "refresh:True"]
+    assert calls == ["load", "refresh:True"]
 
 
 def test_direct_tab_actions_are_hidden_only_for_active_tab() -> None:

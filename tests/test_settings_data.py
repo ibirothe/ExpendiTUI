@@ -6,10 +6,6 @@ from expenditui.models import EntryType, FinancialEntry
 from expenditui.settings_data import SettingsDataManager
 from expenditui.tags import TagRegistry
 from expenditui.theme import BUILTIN_THEME_ROWS, ThemeManager
-from expenditui.visualization import (
-    VisualizationConfig,
-    VisualizationConfigManager,
-)
 
 
 class FakeApp:
@@ -30,7 +26,6 @@ class FakeApp:
         }
         self.tag_registry = TagRegistry(["Living", "Work", "Unused"])
         self.theme_manager = object()
-        self.visualization_manager = object()
         self.last_error: str | None = None
         self.status_message: str | None = None
         self.status_message_kind = "foreground"
@@ -121,17 +116,4 @@ def test_delete_themes_resets_to_builtins_and_first_theme(tmp_path) -> None:
         "theme_index": 0,
     }
     assert app.apply_theme_calls == 1
-    assert app.refresh_calls == [False]
-
-
-def test_delete_visualizations_removes_file_and_uses_defaults(tmp_path) -> None:
-    config_path = tmp_path / "visualizations.json"
-    config_path.write_text("{}", encoding="utf-8")
-    app = FakeApp()
-    app.visualization_manager = VisualizationConfigManager(path=config_path)
-
-    SettingsDataManager(app).delete_visualizations()
-
-    assert not config_path.exists()
-    assert app.visualization_manager.config == VisualizationConfig.default()
     assert app.refresh_calls == [False]

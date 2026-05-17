@@ -14,7 +14,6 @@ from expenditui.screens.overview import (
     OverviewPane,
     OverviewSortMode,
 )
-from expenditui.visualization import VisualizationConfig
 
 
 def test_page_actions_target_overview_table(monkeypatch) -> None:
@@ -288,12 +287,9 @@ def test_enter_on_overview_row_opens_matching_edit_row() -> None:
     asyncio.run(run())
 
 
-def test_overview_layout_keeps_summary_and_visualization_visible_when_height_is_tight() -> (
-    None
-):
+def test_overview_layout_keeps_summary_visible_when_height_is_tight() -> None:
     async def run() -> None:
         app = ExpendiTUIApp()
-        app.visualization_manager.config = VisualizationConfig.default()
         app.expenses = {
             f"expense-{index}": FinancialEntry(
                 amount=Decimal("10.00"),
@@ -313,42 +309,11 @@ def test_overview_layout_keeps_summary_and_visualization_visible_when_height_is_
         async with app.run_test(size=(100, 20)):
             overview = app.query_one(OverviewPane)
             totals_section = overview.query_one("#overview-totals-section")
-            visualization_section = overview.query_one(
-                "#overview-visualization-section"
-            )
             table = overview.query_one("#overview-table")
 
             assert totals_section.size.height > 0
             assert totals_section.size.height == totals_section.virtual_size.height
-            assert visualization_section.size.height > 0
-            assert (
-                visualization_section.size.height
-                == visualization_section.virtual_size.height
-            )
             assert table.size.height < table.virtual_size.height
-            assert (
-                table.size.height
-                < totals_section.size.height + visualization_section.size.height
-            )
-
-    asyncio.run(run())
-
-
-def test_overview_layout_hides_visualization_section_when_config_is_disabled() -> None:
-    async def run() -> None:
-        app = ExpendiTUIApp()
-        app.visualization_manager.config = VisualizationConfig.disabled()
-
-        async with app.run_test(size=(100, 20)):
-            overview = app.query_one(OverviewPane)
-            totals_section = overview.query_one("#overview-totals-section")
-            visualization_section = overview.query_one(
-                "#overview-visualization-section"
-            )
-            table = overview.query_one("#overview-table")
-
-            assert totals_section.size.height > 0
-            assert visualization_section.display is False
             assert table.size.height > 0
 
     asyncio.run(run())
@@ -360,11 +325,10 @@ def test_overview_layout_places_summary_sections_before_scrollable_table() -> No
     theme_source = inspect.getsource(OverviewPane.apply_theme)
 
     totals_index = compose_source.index("overview-totals-section")
-    visualization_index = compose_source.index("overview-visualization-section")
     search_index = compose_source.index("overview-search")
     table_index = compose_source.index('DataTable(id="overview-table")')
 
-    assert totals_index < visualization_index < search_index < table_index
+    assert totals_index < search_index < table_index
     assert ".overview-section" in OverviewPane.DEFAULT_CSS
     assert "min-height: 3;" in OverviewPane.DEFAULT_CSS
     assert "#overview-search" in OverviewPane.DEFAULT_CSS
@@ -373,6 +337,4 @@ def test_overview_layout_places_summary_sections_before_scrollable_table() -> No
     assert "height: 1fr;" in OverviewPane.DEFAULT_CSS
     assert "min-height: 0;" in OverviewPane.DEFAULT_CSS
     assert 'theme.blend("warning", "surface", 0.18)' in theme_source
-    assert 'theme.blend("accent", "surface", 0.18)' in theme_source
     assert 'styles.border = ("round", theme.warning)' in theme_source
-    assert 'styles.border = ("round", theme.accent)' in theme_source

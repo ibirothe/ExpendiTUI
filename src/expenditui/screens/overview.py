@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from enum import Enum
 
-from rich.console import Group
 from rich.text import Text
-from textual import events
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Input, Static
@@ -77,14 +75,8 @@ class OverviewPane(Vertical):
         margin-top: 1;
     }
 
-    #overview-visualization-section,
     #overview-totals-section {
         height: auto;
-    }
-
-    #overview-visualization {
-        height: auto;
-        padding: 1 2;
     }
 
     #overview-totals {
@@ -111,8 +103,6 @@ class OverviewPane(Vertical):
     def compose(self) -> ComposeResult:
         with Vertical(id="overview-totals-section", classes="overview-section"):
             yield Static(id="overview-totals")
-        with Vertical(id="overview-visualization-section", classes="overview-section"):
-            yield Static(id="overview-visualization")
         yield Input(
             placeholder="Search entries or tags",
             id="overview-search",
@@ -149,7 +139,6 @@ class OverviewPane(Vertical):
 
     def apply_theme(self, theme: AppTheme) -> None:
         totals_background = theme.blend("warning", "surface", 0.18)
-        visualization_background = theme.blend("accent", "surface", 0.18)
         self.styles.background = theme.background
         self.styles.color = theme.foreground
         totals_section = self.query_one("#overview-totals-section", Vertical)
@@ -158,14 +147,6 @@ class OverviewPane(Vertical):
             color=theme.foreground,
         )
         totals_section.styles.border = ("round", theme.warning)
-        visualization_section = self.query_one(
-            "#overview-visualization-section", Vertical
-        )
-        visualization_section.set_styles(
-            background=visualization_background,
-            color=theme.foreground,
-        )
-        visualization_section.styles.border = ("round", theme.accent)
         self.query_one("#overview-table", DataTable).set_styles(
             background=theme.surface,
             color=theme.foreground,
@@ -174,19 +155,11 @@ class OverviewPane(Vertical):
             background=theme.surface,
             color=theme.foreground,
         )
-        self.query_one("#overview-visualization", Static).set_styles(
-            background=visualization_background,
-            color=theme.foreground,
-        )
         self.query_one("#overview-totals", Static).set_styles(
             background=totals_background,
             color=theme.foreground,
         )
         self.refresh_view()
-
-    def on_resize(self, event: events.Resize) -> None:
-        del event
-        self._refresh_visualization()
 
     def refresh_view(self) -> None:
         table = self.query_one("#overview-table", DataTable)
@@ -234,7 +207,6 @@ class OverviewPane(Vertical):
         yearly_income = total_yearly(income)
         monthly_savings = savings_monthly(income, expenses)
         yearly_savings = savings_yearly(income, expenses)
-        self._refresh_visualization()
         totals = Text()
         totals.append(
             f"Monthly expenses: {format_money(monthly_expenses)}\n",
@@ -333,20 +305,6 @@ class OverviewPane(Vertical):
             event.stop()
             event.prevent_default()
             self.app.open_overview_selection_in_edit()
-
-    def _refresh_visualization(self) -> None:
-        section = self.query_one("#overview-visualization-section", Vertical)
-        widget = self.query_one("#overview-visualization", Static)
-        available_width = widget.size.width or self.size.width or self.app.size.width
-        result = self.app.render_overview_visualization(available_width)
-
-        lines = [*result.lines, *result.legend]
-        if not lines:
-            section.display = False
-            widget.update("")
-            return
-        section.display = True
-        widget.update(Group(*lines))
 
     def _cursor_identity(self) -> tuple[EntryType, str] | None:
         table = self.query_one("#overview-table", DataTable)

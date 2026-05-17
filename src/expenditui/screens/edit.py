@@ -14,6 +14,7 @@ from ..constants import DEFAULT_FREQUENCY, MAX_TAGS
 from ..models import EntryType, FinancialEntry
 from ..tags import normalize_tag_key
 from ..theme import AppTheme
+from .helpers import focus_relative_field, message_color, refresh_app_bindings
 
 
 @dataclass
@@ -129,22 +130,16 @@ class EntryForm(Vertical):
         self._render_suggestions()
 
     def _focus_relative_field(self, direction: int) -> None:
-        fields = [
-            self.query_one("#name-input", Input),
-            self.query_one("#amount-input", Input),
-            self.query_one("#frequency-input", Input),
-            self.query_one("#tags-input", Input),
-        ]
-        focused = self.app.focused
-        try:
-            current_index = next(
-                index for index, field in enumerate(fields) if field is focused
-            )
-        except StopIteration:
-            current_index = 0
-
-        target_index = max(0, min(current_index + direction, len(fields) - 1))
-        fields[target_index].focus()
+        focus_relative_field(
+            [
+                self.query_one("#name-input", Input),
+                self.query_one("#amount-input", Input),
+                self.query_one("#frequency-input", Input),
+                self.query_one("#tags-input", Input),
+            ],
+            focused=self.app.focused,
+            direction=direction,
+        )
 
     def _render_selected_tags(self) -> None:
         widget = self.query_one("#selected-tags", Static)
@@ -939,18 +934,10 @@ class EditPane(Vertical):
         )
 
     def _message_color(self, kind: str) -> str:
-        slot_name = {
-            "success": "success",
-            "error": "error",
-            "accent": "accent",
-            "muted": "muted",
-        }.get(kind, "foreground")
-        return self.app.theme_color(slot_name)
+        return message_color(self.app, kind)
 
     def _refresh_app_bindings(self) -> None:
-        refresh_bindings = getattr(self.app, "refresh_bindings", None)
-        if callable(refresh_bindings):
-            refresh_bindings()
+        refresh_app_bindings(self.app)
 
     def _refresh_tag_suggestions(self) -> None:
         form = self.query_one(EntryForm)

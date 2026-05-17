@@ -11,6 +11,7 @@ from textual.widgets import Button, DataTable, Input, Label, Static
 
 from ..settings_data import SettingsDeletionCategory
 from ..theme import AppTheme, THEME_SLOT_NAMES
+from .helpers import focus_relative_field, message_color, refresh_app_bindings
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,7 +55,6 @@ class DeletionAction:
 
 DELETE_FINANCIAL_BUTTON_ID = "delete-financial-data"
 DELETE_THEMES_BUTTON_ID = "delete-themes"
-DELETE_VISUALIZATIONS_BUTTON_ID = "delete-visualizations"
 DELETE_RECOMMENDED_TAGS_BUTTON_ID = "delete-recommended-tags"
 
 DELETION_ACTIONS = {
@@ -69,12 +69,6 @@ DELETION_ACTIONS = {
         "Reset Theme",
         "Delete persisted themes and reset to built-in defaults? (y/n)",
         "Reset themes to built-in defaults.",
-    ),
-    DELETE_VISUALIZATIONS_BUTTON_ID: DeletionAction(
-        SettingsDeletionCategory.DELETE_VISUALIZATIONS,
-        "Reset Visualization",
-        "Delete visualization settings and restore defaults? (y/n)",
-        "Reset visualizations to default configuration.",
     ),
     DELETE_RECOMMENDED_TAGS_BUTTON_ID: DeletionAction(
         SettingsDeletionCategory.DELETE_RECOMMENDED_TAGS,
@@ -121,23 +115,17 @@ class ThemeForm(VerticalScroll):
         return field.id == f"theme-color-{THEME_SLOT_NAMES[-1]}"
 
     def _focus_relative_field(self, direction: int) -> None:
-        fields = [
-            self.query_one("#theme-name-input", Input),
-            *[
-                self.query_one(f"#theme-color-{slot_name}", Input)
-                for slot_name in THEME_SLOT_NAMES
+        focus_relative_field(
+            [
+                self.query_one("#theme-name-input", Input),
+                *[
+                    self.query_one(f"#theme-color-{slot_name}", Input)
+                    for slot_name in THEME_SLOT_NAMES
+                ],
             ],
-        ]
-        focused = self.app.focused
-        try:
-            current_index = next(
-                index for index, field in enumerate(fields) if field is focused
-            )
-        except StopIteration:
-            current_index = 0
-
-        target_index = max(0, min(current_index + direction, len(fields) - 1))
-        fields[target_index].focus()
+            focused=self.app.focused,
+            direction=direction,
+        )
 
 
 class SettingsPane(Vertical):
@@ -771,7 +759,6 @@ class SettingsPane(Vertical):
         slot_by_button_id = {
             DELETE_FINANCIAL_BUTTON_ID: "error",
             DELETE_THEMES_BUTTON_ID: "warning",
-            DELETE_VISUALIZATIONS_BUTTON_ID: "accent",
             DELETE_RECOMMENDED_TAGS_BUTTON_ID: "success",
         }
         for button in self._danger_buttons():
@@ -786,15 +773,7 @@ class SettingsPane(Vertical):
             button.styles.border = ("tall", color)
 
     def _message_color(self, kind: str) -> str:
-        slot_name = {
-            "success": "success",
-            "error": "error",
-            "accent": "accent",
-            "muted": "muted",
-        }.get(kind, "foreground")
-        return self.app.theme_color(slot_name)
+        return message_color(self.app, kind)
 
     def _refresh_app_bindings(self) -> None:
-        refresh_bindings = getattr(self.app, "refresh_bindings", None)
-        if callable(refresh_bindings):
-            refresh_bindings()
+        refresh_app_bindings(self.app)
