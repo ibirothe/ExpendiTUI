@@ -6,7 +6,6 @@ ExpendiTUI is a keyboard-first terminal application for Arch Linux that tracks r
 
 - Automatically load expenses and income from JSON under the user config directory
 - View monthly and yearly expense, income, and savings totals in a Textual Overview tab
-- Render a compact configurable ASCII or Unicode financial visualization in Overview
 - Add, edit, and delete expense and income entries from a dedicated Edit tab
 - Read keyboard shortcuts from the Help tab
 - Switch between tabs with visible tab navigation and keyboard shortcuts
@@ -109,14 +108,8 @@ Optional theme configuration is loaded from:
 ~/.config/expenditui/themes.json
 ```
 
-Optional overview visualization configuration is loaded from:
-
-```text
-~/.config/expenditui/visualizations.json
-```
-
-On startup, the app automatically loads this file. If the file does not exist,
-the app creates it with an empty JSON object:
+On startup, the app automatically loads its financial data files. If a data
+file does not exist, the app creates it with an empty JSON object:
 
 ```json
 {}
@@ -133,50 +126,6 @@ Built-in themes include `Dreamy`, `Sandstone`, and `Nord`.
 Themes can be created, edited, deleted, and activated from the Settings tab.
 The first theme change writes the currently loaded themes plus the change to
 `themes.json`.
-
-If `visualizations.json` is missing, malformed, or contains unsupported values,
-the app falls back to a safe default `income_vs_expense` bar comparison and
-remains usable. If the file exists but is empty or contains only `{}`, the
-overview visualization section is hidden entirely.
-
-Example:
-
-```json
-{
-  "overview": {
-    "enabled": true,
-    "type": "income_vs_expense",
-    "entryType": "both",
-    "maxWidth": 20,
-    "incomeSymbol": "🟪",
-    "expenseSymbol": "🟧",
-    "showLabels": true
-  }
-}
-```
-
-Tag-based expenditure distribution can be enabled with high-contrast colored
-square emoji buckets:
-
-```json
-{
-  "overview": {
-    "enabled": true,
-    "type": "tag_distribution",
-    "entryType": "expense",
-    "groupBy": "tags",
-    "maxWidth": 24,
-    "othersThreshold": 0.05,
-    "maxLegendEntries": 6,
-    "tagSymbols": ["🟧", "🟪", "🟨", "🟦", "🟫"],
-    "othersSymbol": "⬜"
-  }
-}
-```
-
-Use `"entryType": "income"`, `"expense"`, or `"both"` to control which saved
-entry types feed a visualization. If omitted, `income_vs_expense` shows both,
-while `tag_distribution` keeps its expense-focused default.
 
 ## Navigation
 

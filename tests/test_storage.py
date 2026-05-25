@@ -220,8 +220,6 @@ def test_app_load_state_handles_invalid_json_without_crashing(
     monkeypatch.setattr("expenditui.storage.get_expenses_path", lambda: expenses_path)
     monkeypatch.setattr("expenditui.storage.get_income_path", lambda: income_path)
     monkeypatch.setattr("expenditui.storage.get_tags_path", lambda: tags_path)
-    monkeypatch.setattr("expenditui.app.get_expenses_path", lambda: expenses_path)
-    monkeypatch.setattr("expenditui.app.get_income_path", lambda: income_path)
 
     app = ExpendiTUIApp()
 
@@ -286,8 +284,6 @@ def test_app_load_state_creates_default_tags_on_first_startup(
     monkeypatch.setattr("expenditui.storage.get_expenses_path", lambda: expenses_path)
     monkeypatch.setattr("expenditui.storage.get_income_path", lambda: income_path)
     monkeypatch.setattr("expenditui.storage.get_tags_path", lambda: tags_path)
-    monkeypatch.setattr("expenditui.app.get_expenses_path", lambda: expenses_path)
-    monkeypatch.setattr("expenditui.app.get_income_path", lambda: income_path)
 
     app = ExpendiTUIApp()
 
@@ -367,8 +363,6 @@ def test_app_load_state_reconciles_entry_tags_into_registry(
     monkeypatch.setattr("expenditui.storage.get_expenses_path", lambda: expenses_path)
     monkeypatch.setattr("expenditui.storage.get_income_path", lambda: income_path)
     monkeypatch.setattr("expenditui.storage.get_tags_path", lambda: tags_path)
-    monkeypatch.setattr("expenditui.app.get_expenses_path", lambda: expenses_path)
-    monkeypatch.setattr("expenditui.app.get_income_path", lambda: income_path)
 
     app = ExpendiTUIApp()
 

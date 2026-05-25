@@ -6,6 +6,7 @@ from textual.binding import Binding
 from textual.css.query import NoMatches
 from textual.widgets import Footer, Header, Static, TabbedContent, TabPane
 
+from .app_state import AppStateService
 from .constants import APP_TITLE
 from .models import EntryType, FinancialEntry
 from .screens.edit import EditPane
@@ -17,24 +18,10 @@ from .settings_data import (
     SettingsDeletionCategory,
     format_deletion_error,
 )
-from .storage import (
-    StorageError,
-    get_dataset_path,
-    get_expenses_path,
-    get_income_path,
-    load_entries,
-    load_tag_registry,
-    save_entries,
-    save_tag_registry,
-)
+from .storage import StorageError
 from .tags import TagRegistry
 from .theme import AppTheme, ThemeManager
-from .visualization import (
-    VisualizationConfig,
-    VisualizationConfigManager,
-    VisualizationRenderer,
-    VisualizationResult,
-)
+from .theme_css import build_theme_css
 
 OVERVIEW_TAB = "overview-tab"
 EDIT_TAB = "edit-tab"
@@ -42,6 +29,28 @@ HELP_TAB = "help-tab"
 SETTINGS_TAB = "settings-tab"
 THEME_NOTICE_SECONDS = 2.0
 THEME_CSS_SOURCE = ("runtime-theme.css", "ExpendiTUIApp.RUNTIME_THEME_CSS")
+NAVIGATION_TAB_IDS = frozenset({OVERVIEW_TAB, EDIT_TAB, HELP_TAB, SETTINGS_TAB})
+GLOBAL_BLOCKED_ACTIONS = frozenset(
+    {
+        "reload",
+        "show_overview",
+        "show_edit",
+        "show_help",
+        "show_settings",
+        "back",
+        "focus_overview_search",
+        "toggle_overview_sort",
+        "open_overview_selection_in_edit",
+        "scroll_active_page_up",
+        "scroll_active_page_down",
+    }
+)
+TAB_ACTIONS = {
+    "show_overview": OVERVIEW_TAB,
+    "show_edit": EDIT_TAB,
+    "show_help": HELP_TAB,
+    "show_settings": SETTINGS_TAB,
+}
 
 
 class ExpendiTUIApp(App[None]):
@@ -103,8 +112,7 @@ class ExpendiTUIApp(App[None]):
         self.theme_notice: str | None = None
         self._theme_notice_token = 0
         self.theme_manager = ThemeManager()
-        self.visualization_manager = VisualizationConfigManager()
-        self.visualization_renderer = VisualizationRenderer()
+        self.state_service = AppStateService(self)
         self.settings_data_manager = SettingsDataManager(self)
 
     def compose(self) -> ComposeResult:
@@ -151,19 +159,8 @@ class ExpendiTUIApp(App[None]):
         self, event: TabbedContent.TabActivated
     ) -> None:
         next_tab_id = event.pane.id or OVERVIEW_TAB
-        if (
-            self.active_tab_id == EDIT_TAB
-            and next_tab_id != EDIT_TAB
-            and self.edit_mode_blocks_global_actions()
-        ):
-            self.query_one("#main-tabs", TabbedContent).active = EDIT_TAB
-            return
-        if (
-            self.active_tab_id == SETTINGS_TAB
-            and next_tab_id != SETTINGS_TAB
-            and self.settings_mode_blocks_global_actions()
-        ):
-            self.query_one("#main-tabs", TabbedContent).active = SETTINGS_TAB
+        if not self._can_leave_active_tab(next_tab_id):
+            self.query_one("#main-tabs", TabbedContent).active = self.active_tab_id
             return
 
         leaving_overview = (
@@ -177,92 +174,26 @@ class ExpendiTUIApp(App[None]):
         self.refresh_bindings()
 
     def load_state(self) -> str | None:
-        diagnostics: list[str] = []
-        loaded_any = False
-        for entry_type in EntryType:
-            try:
-                result = load_entries(entry_type)
-                self.set_entries(entry_type, result.entries)
-                loaded_any = True
-                if result.diagnostics:
-                    count = len(result.diagnostics)
-                    noun = "entry" if count == 1 else "entries"
-                    diagnostics.append(
-                        f"{entry_type.display_name}: skipped {count} invalid {noun} from {get_dataset_path(entry_type)}."
-                    )
-            except StorageError as exc:
-                self.set_entries(entry_type, {})
-                diagnostics.append(str(exc))
-
-        tag_result = load_tag_registry()
-        tag_registry = tag_result.registry
-        entry_tags = self._collect_all_tags()
-        tag_registry_changed = tag_registry.extend(entry_tags)
-        if tag_result.diagnostics:
-            diagnostics.extend(tag_result.diagnostics)
-        if tag_result.needs_save or tag_registry_changed:
-            try:
-                save_tag_registry(tag_registry)
-            except StorageError as exc:
-                diagnostics.append(str(exc))
-        self.tag_registry = tag_registry
-
-        self.last_error = " | ".join(diagnostics) if diagnostics else None
-        if loaded_any:
-            self.status_message = "Loaded expense and income entries."
-            self.status_message_kind = "success"
-        else:
-            self.status_message = None
-        return self.last_error
+        return self.state_service.load_state()
 
     def save_state(
         self, entry_type: EntryType, data: dict[str, FinancialEntry]
     ) -> str | None:
-        updated_tag_registry = self.tag_registry.copy()
-        updated_tag_registry.extend(self._collect_tags(data.values()))
-        try:
-            if updated_tag_registry.to_list() != self.tag_registry.to_list():
-                save_tag_registry(updated_tag_registry)
-                self.tag_registry = updated_tag_registry
-            save_entries(entry_type, data)
-            self.set_entries(entry_type, load_entries(entry_type).entries)
-            self.tag_registry = updated_tag_registry
-            self.last_error = None
-            self.status_message = (
-                f"Saved {entry_type.plural_name} to {get_dataset_path(entry_type)}."
-            )
-            self.status_message_kind = "success"
-        except StorageError as exc:
-            self.last_error = str(exc)
-            self.status_message = None
-        return self.last_error
+        return self.state_service.save_state(entry_type, data)
 
     def get_entries(self, entry_type: EntryType) -> dict[str, FinancialEntry]:
-        return self.expenses if entry_type is EntryType.EXPENSE else self.income
+        return self.state_service.get_entries(entry_type)
 
     def get_tag_registry(self) -> TagRegistry:
         return self.tag_registry
 
     def ensure_global_tag(self, raw_tag: str) -> tuple[str | None, str | None]:
-        updated_registry = self.tag_registry.copy()
-        try:
-            canonical_tag, _changed = updated_registry.add(raw_tag)
-            if updated_registry.to_list() != self.tag_registry.to_list():
-                save_tag_registry(updated_registry)
-            self.tag_registry = updated_registry
-        except (StorageError, ValueError) as exc:
-            self.last_error = str(exc)
-            self.status_message = None
-            return None, self.last_error
-        return canonical_tag, None
+        return self.state_service.ensure_global_tag(raw_tag)
 
     def set_entries(
         self, entry_type: EntryType, entries: dict[str, FinancialEntry]
     ) -> None:
-        if entry_type is EntryType.EXPENSE:
-            self.expenses = entries
-        else:
-            self.income = entries
+        self.state_service.set_entries(entry_type, entries)
 
     def refresh_views(self, *, sync_edit: bool = False) -> None:
         self.query_one(OverviewPane).refresh_view()
@@ -275,16 +206,10 @@ class ExpendiTUIApp(App[None]):
         self.refresh_message_area()
 
     def _collect_all_tags(self) -> list[str]:
-        tags: list[str] = []
-        tags.extend(self._collect_tags(self.expenses.values()))
-        tags.extend(self._collect_tags(self.income.values()))
-        return tags
+        return self.state_service.collect_all_tags()
 
     def _collect_tags(self, entries) -> list[str]:
-        tags: list[str] = []
-        for entry in entries:
-            tags.extend(entry.tags)
-        return tags
+        return self.state_service.collect_tags(entries)
 
     def switch_to_tab(self, tab_id: str) -> None:
         if self.active_tab_id == OVERVIEW_TAB and tab_id != OVERVIEW_TAB:
@@ -299,68 +224,64 @@ class ExpendiTUIApp(App[None]):
         self.refresh_bindings()
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        if action in {
-            "reload",
-            "show_overview",
-            "show_edit",
-            "show_help",
-            "show_settings",
-            "back",
-            "focus_overview_search",
-            "toggle_overview_sort",
-            "open_overview_selection_in_edit",
-            "scroll_active_page_up",
-            "scroll_active_page_down",
-        } and (
+        if action in GLOBAL_BLOCKED_ACTIONS and (
             self.edit_mode_blocks_global_actions()
             or self.settings_mode_blocks_global_actions()
         ):
             return False
         if action == "cycle_theme":
             return not self.theme_switch_blocks_global_actions()
-        if action == "show_overview":
-            return self.active_tab_id != OVERVIEW_TAB
-        if action == "show_edit":
-            return self.active_tab_id != EDIT_TAB
+        if action in TAB_ACTIONS:
+            return self.active_tab_id != TAB_ACTIONS[action]
         if action == "back":
-            return self.active_tab_id in {EDIT_TAB, HELP_TAB, SETTINGS_TAB}
-        if action == "show_help":
-            return self.active_tab_id != HELP_TAB
-        if action == "show_settings":
-            return self.active_tab_id != SETTINGS_TAB
+            return self._back_action_available()
         if action == "focus_overview_search":
-            if self.active_tab_id != OVERVIEW_TAB:
-                return False
-            try:
-                return not self.query_one(OverviewPane).search_has_focus
-            except (NoMatches, ScreenStackError):
-                return True
+            return self._overview_search_action_available()
         if action == "toggle_overview_sort":
-            if self.active_tab_id != OVERVIEW_TAB:
-                return False
-            try:
-                return not self.query_one(OverviewPane).search_has_focus
-            except (NoMatches, ScreenStackError):
-                return True
+            return self._overview_search_action_available()
         if action == "open_overview_selection_in_edit":
-            if self.active_tab_id != OVERVIEW_TAB:
-                return False
-            try:
-                overview = self.query_one(OverviewPane)
-                return (
-                    not overview.search_has_focus
-                    and overview.selected_entry_identity is not None
-                )
-            except (NoMatches, ScreenStackError):
-                return False
+            return self._overview_selection_action_available()
         if action in {"scroll_active_page_up", "scroll_active_page_down"}:
-            return self.active_tab_id in {
-                OVERVIEW_TAB,
-                EDIT_TAB,
-                HELP_TAB,
-                SETTINGS_TAB,
-            }
+            return self.active_tab_id in NAVIGATION_TAB_IDS
         return super().check_action(action, parameters)
+
+    def _can_leave_active_tab(self, next_tab_id: str) -> bool:
+        if self.active_tab_id == next_tab_id:
+            return True
+        return not (
+            self.edit_mode_blocks_global_actions()
+            or self.settings_mode_blocks_global_actions()
+        )
+
+    def _overview_search_action_available(self) -> bool:
+        if self.active_tab_id != OVERVIEW_TAB:
+            return False
+        try:
+            return not self.query_one(OverviewPane).search_has_focus
+        except (NoMatches, ScreenStackError):
+            return True
+
+    def _overview_selection_action_available(self) -> bool:
+        if self.active_tab_id != OVERVIEW_TAB:
+            return False
+        try:
+            overview = self.query_one(OverviewPane)
+            return (
+                not overview.search_has_focus
+                and overview.selected_entry_identity is not None
+            )
+        except (NoMatches, ScreenStackError):
+            return False
+
+    def _back_action_available(self) -> bool:
+        if self.active_tab_id in {EDIT_TAB, HELP_TAB, SETTINGS_TAB}:
+            return True
+        if self.active_tab_id != OVERVIEW_TAB:
+            return False
+        try:
+            return self.query_one(OverviewPane).search_has_focus
+        except (NoMatches, ScreenStackError):
+            return False
 
     def edit_mode_blocks_global_actions(self) -> bool:
         if self.active_tab_id != EDIT_TAB:
@@ -393,7 +314,6 @@ class ExpendiTUIApp(App[None]):
 
     def action_reload(self) -> None:
         self.load_state()
-        self.reload_visualizations()
         self.refresh_views(sync_edit=True)
 
     def action_show_edit(self) -> None:
@@ -409,24 +329,27 @@ class ExpendiTUIApp(App[None]):
         self.switch_to_tab(SETTINGS_TAB)
 
     def action_scroll_active_page_up(self) -> None:
-        if self.active_tab_id == OVERVIEW_TAB:
-            self.query_one(OverviewPane).page_up()
-        elif self.active_tab_id == EDIT_TAB:
-            self.query_one(EditPane).page_up()
-        elif self.active_tab_id == HELP_TAB:
-            self.query_one(HelpPane).scroll_page_up(animate=False)
-        elif self.active_tab_id == SETTINGS_TAB:
-            self.query_one(SettingsPane).page_up()
+        self._scroll_active_page("up")
 
     def action_scroll_active_page_down(self) -> None:
+        self._scroll_active_page("down")
+
+    def _scroll_active_page(self, direction: str) -> None:
         if self.active_tab_id == OVERVIEW_TAB:
-            self.query_one(OverviewPane).page_down()
+            pane = self.query_one(OverviewPane)
+            pane.page_up() if direction == "up" else pane.page_down()
         elif self.active_tab_id == EDIT_TAB:
-            self.query_one(EditPane).page_down()
+            pane = self.query_one(EditPane)
+            pane.page_up() if direction == "up" else pane.page_down()
         elif self.active_tab_id == HELP_TAB:
-            self.query_one(HelpPane).scroll_page_down(animate=False)
+            pane = self.query_one(HelpPane)
+            if direction == "up":
+                pane.scroll_page_up(animate=False)
+            else:
+                pane.scroll_page_down(animate=False)
         elif self.active_tab_id == SETTINGS_TAB:
-            self.query_one(SettingsPane).page_down()
+            pane = self.query_one(SettingsPane)
+            pane.page_up() if direction == "up" else pane.page_down()
 
     def action_focus_overview_search(self) -> None:
         if self.active_tab_id != OVERVIEW_TAB:
@@ -511,44 +434,28 @@ class ExpendiTUIApp(App[None]):
             return message
         return f"{message} | {suffix}"
 
-    @property
-    def visualization_config(self) -> VisualizationConfig:
-        return self.visualization_manager.config
-
-    def reload_visualizations(self) -> VisualizationConfig:
-        return self.visualization_manager.reload()
-
     def delete_settings_data(self, category: SettingsDeletionCategory) -> str | None:
         try:
-            if category is SettingsDeletionCategory.DELETE_FINANCIAL_DATA:
-                self.settings_data_manager.delete_financial_data()
-            elif category is SettingsDeletionCategory.DELETE_THEMES:
-                self.settings_data_manager.delete_themes()
-            elif category is SettingsDeletionCategory.DELETE_VISUALIZATIONS:
-                self.settings_data_manager.delete_visualizations()
-            elif category is SettingsDeletionCategory.DELETE_RECOMMENDED_TAGS:
-                self.settings_data_manager.delete_recommended_tags()
-            else:
+            handler = {
+                SettingsDeletionCategory.DELETE_FINANCIAL_DATA: (
+                    self.settings_data_manager.delete_financial_data
+                ),
+                SettingsDeletionCategory.DELETE_THEMES: (
+                    self.settings_data_manager.delete_themes
+                ),
+                SettingsDeletionCategory.DELETE_RECOMMENDED_TAGS: (
+                    self.settings_data_manager.delete_recommended_tags
+                ),
+            }.get(category)
+            if handler is None:
                 raise ValueError(f"Unsupported deletion category: {category}.")
+            handler()
         except (OSError, StorageError, ValueError) as exc:
             self.last_error = format_deletion_error(exc)
             self.status_message = None
             self.refresh_message_area()
             return self.last_error
         return None
-
-    def render_overview_visualization(
-        self, available_width: int
-    ) -> VisualizationResult:
-        return self.visualization_renderer.render(
-            config=self.visualization_config,
-            income_entries=self.income,
-            expense_entries=self.expenses,
-            available_width=available_width,
-            style_for_slot=lambda slot_name: self.theme_rich_style(
-                slot_name, bold=True
-            ),
-        )
 
     def show_theme_notice(self) -> None:
         self.theme_notice = f"Theme: {self.active_theme.name}"
@@ -620,194 +527,7 @@ class ExpendiTUIApp(App[None]):
         self.refresh_css(animate=False)
 
     def _build_theme_css(self, theme: AppTheme) -> str:
-        surface_alt = theme.blend("surface", "background", 0.65)
-        surface_hover = theme.blend("accent", "surface", 0.18)
-        surface_focus = theme.blend("surface", "accent", 0.85)
-        accent_soft = theme.blend("accent", "surface", 0.32)
-        footer_description = theme.blend("surface", "background", 0.75)
-        row_alt = theme.blend("surface", "background", 0.82)
-
-        return f"""
-        Screen {{
-            background: {theme.background};
-            color: {theme.foreground};
-        }}
-
-        Header {{
-            background: {theme.surface};
-            color: {theme.foreground};
-        }}
-
-        HeaderTitle {{
-            color: {theme.accent};
-        }}
-
-        HeaderIcon {{
-            color: {theme.accent};
-        }}
-
-        HeaderIcon:hover {{
-            background: {accent_soft};
-            color: {theme.background};
-        }}
-
-        Footer {{
-            background: {theme.surface};
-            color: {theme.foreground};
-        }}
-
-        FooterLabel {{
-            background: {footer_description};
-            color: {theme.foreground};
-        }}
-
-        FooterKey {{
-            background: {theme.surface};
-            color: {theme.foreground};
-        }}
-
-        FooterKey > .footer-key--key {{
-            background: {theme.accent};
-            color: {theme.background};
-            text-style: bold;
-        }}
-
-        FooterKey > .footer-key--description {{
-            background: {footer_description};
-            color: {theme.foreground};
-        }}
-
-        FooterKey:hover {{
-            background: {accent_soft};
-            color: {theme.foreground};
-        }}
-
-        Tabs {{
-            background: {theme.background};
-        }}
-
-        Tab {{
-            background: {theme.background};
-            color: {theme.muted};
-        }}
-
-        Tab:hover {{
-            background: {surface_alt};
-            color: {theme.foreground};
-        }}
-
-        Tab.-active {{
-            background: {theme.surface};
-            color: {theme.foreground};
-            text-style: bold;
-        }}
-
-        Tabs:focus .-active {{
-            background: {theme.accent};
-            color: {theme.background};
-            text-style: bold;
-        }}
-
-        Underline > .underline--bar {{
-            color: {theme.accent};
-            background: {surface_alt};
-        }}
-
-        Input {{
-            background: {theme.surface};
-            color: {theme.foreground};
-            border: tall {theme.muted};
-        }}
-
-        Input:focus {{
-            background: {surface_focus};
-            border: tall {theme.accent};
-        }}
-
-        Input.-invalid {{
-            border: tall {theme.error};
-        }}
-
-        Input.-invalid:focus {{
-            border: tall {theme.error};
-        }}
-
-        Input > .input--cursor {{
-            background: {theme.accent};
-            color: {theme.background};
-            text-style: bold;
-        }}
-
-        Input > .input--selection {{
-            background: {accent_soft};
-            color: {theme.foreground};
-        }}
-
-        Input > .input--placeholder,
-        Input > .input--suggestion {{
-            color: {theme.muted};
-        }}
-
-        DataTable {{
-            background: {theme.surface};
-            color: {theme.foreground};
-        }}
-
-        DataTable > .datatable--header {{
-            background: {surface_alt};
-            color: {theme.foreground};
-        }}
-
-        DataTable > .datatable--fixed {{
-            background: {surface_alt};
-            color: {theme.foreground};
-        }}
-
-        DataTable > .datatable--even-row {{
-            background: {row_alt};
-        }}
-
-        DataTable > .datatable--cursor {{
-            background: {accent_soft};
-            color: {theme.foreground};
-            text-style: bold;
-        }}
-
-        DataTable:focus > .datatable--cursor {{
-            background: {theme.accent};
-            color: {theme.background};
-            text-style: bold;
-        }}
-
-        DataTable > .datatable--fixed-cursor {{
-            background: {accent_soft};
-            color: {theme.foreground};
-        }}
-
-        DataTable:focus > .datatable--fixed-cursor {{
-            background: {theme.accent};
-            color: {theme.background};
-        }}
-
-        DataTable > .datatable--header-cursor {{
-            background: {theme.accent};
-            color: {theme.background};
-        }}
-
-        DataTable > .datatable--header-hover {{
-            background: {accent_soft};
-            color: {theme.foreground};
-        }}
-
-        DataTable > .datatable--hover {{
-            background: {surface_hover};
-        }}
-
-        Markdown {{
-            background: {theme.background};
-            color: {theme.foreground};
-        }}
-        """
+        return build_theme_css(theme)
 
 
 def main() -> None:

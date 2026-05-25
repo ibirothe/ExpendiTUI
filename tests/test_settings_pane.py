@@ -7,7 +7,6 @@ from expenditui.screens.settings import (
     DELETE_FINANCIAL_BUTTON_ID,
     DELETE_RECOMMENDED_TAGS_BUTTON_ID,
     DELETE_THEMES_BUTTON_ID,
-    DELETE_VISUALIZATIONS_BUTTON_ID,
     DraftTheme,
     SettingsMode,
     SettingsPane,
@@ -477,7 +476,7 @@ def test_data_delete_confirmation_can_be_cancelled_with_n_or_escape() -> None:
     assert pane.mode is SettingsMode.NAVIGATION
 
     pane.on_button_pressed(  # type: ignore[arg-type]
-        FakeButtonPressEvent(DELETE_VISUALIZATIONS_BUTTON_ID)
+        FakeButtonPressEvent(DELETE_THEMES_BUTTON_ID)
     )
     pane.on_key(FakeKeyEvent("escape", character=""))
 

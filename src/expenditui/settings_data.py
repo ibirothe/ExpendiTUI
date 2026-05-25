@@ -11,7 +11,6 @@ from .tags import TagRegistry
 class SettingsDeletionCategory(str, Enum):
     DELETE_FINANCIAL_DATA = "delete_financial_data"
     DELETE_THEMES = "delete_themes"
-    DELETE_VISUALIZATIONS = "delete_visualizations"
     DELETE_RECOMMENDED_TAGS = "delete_recommended_tags"
 
 
@@ -19,16 +18,11 @@ class _ThemeManager(Protocol):
     def reset_to_builtins(self) -> None: ...
 
 
-class _VisualizationConfigManager(Protocol):
-    def reset_to_default(self) -> None: ...
-
-
 class _SettingsDataApp(Protocol):
     expenses: dict[str, FinancialEntry]
     income: dict[str, FinancialEntry]
     tag_registry: TagRegistry
     theme_manager: _ThemeManager
-    visualization_manager: _VisualizationConfigManager
     last_error: str | None
     status_message: str | None
     status_message_kind: str
@@ -60,11 +54,6 @@ class SettingsDataManager:
         self.app.theme_manager.reset_to_builtins()
         self._set_success("Reset themes to built-in defaults.")
         self.app.apply_theme(announce=True)
-        self.app.refresh_views(sync_edit=False)
-
-    def delete_visualizations(self) -> None:
-        self.app.visualization_manager.reset_to_default()
-        self._set_success("Reset visualizations to default configuration.")
         self.app.refresh_views(sync_edit=False)
 
     def delete_recommended_tags(self) -> None:

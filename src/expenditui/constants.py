@@ -7,7 +7,6 @@ APP_TITLE = "ExpendiTUI"
 EXPENSES_FILENAME = "expenses.json"
 INCOME_FILENAME = "income.json"
 TAGS_FILENAME = "tags.json"
-VISUALIZATIONS_FILENAME = "visualizations.json"
 EMPTY_JSON_OBJECT = "{}\n"
 MONEY_PLACES = Decimal("0.01")
 ROUNDING_MODE = ROUND_HALF_UP
