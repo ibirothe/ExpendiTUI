@@ -116,6 +116,28 @@ def test_direct_tab_actions_are_hidden_only_for_active_tab() -> None:
     assert app.check_action("back", ()) is True
 
 
+def test_back_action_is_available_when_overview_search_has_focus(monkeypatch) -> None:
+    app = ExpendiTUIApp()
+    app.active_tab_id = OVERVIEW_TAB
+    overview = SimpleNamespace(search_has_focus=True)
+
+    monkeypatch.setattr(
+        app,
+        "query_one",
+        lambda selector, *_args: (
+            overview
+            if hasattr(selector, "__name__") and selector.__name__ == "OverviewPane"
+            else None
+        ),
+    )
+
+    assert app.check_action("back", ()) is True
+
+    overview.search_has_focus = False
+
+    assert app.check_action("back", ()) is False
+
+
 def test_modal_edit_blocks_global_navigation_actions(monkeypatch) -> None:
     app = ExpendiTUIApp()
     app.active_tab_id = EDIT_TAB

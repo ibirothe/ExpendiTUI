@@ -18,11 +18,7 @@ from .settings_data import (
     SettingsDeletionCategory,
     format_deletion_error,
 )
-from .storage import (
-    StorageError,
-    get_expenses_path,
-    get_income_path,
-)
+from .storage import StorageError
 from .tags import TagRegistry
 from .theme import AppTheme, ThemeManager
 from .theme_css import build_theme_css
@@ -238,7 +234,7 @@ class ExpendiTUIApp(App[None]):
         if action in TAB_ACTIONS:
             return self.active_tab_id != TAB_ACTIONS[action]
         if action == "back":
-            return self.active_tab_id in {EDIT_TAB, HELP_TAB, SETTINGS_TAB}
+            return self._back_action_available()
         if action == "focus_overview_search":
             return self._overview_search_action_available()
         if action == "toggle_overview_sort":
@@ -274,6 +270,16 @@ class ExpendiTUIApp(App[None]):
                 not overview.search_has_focus
                 and overview.selected_entry_identity is not None
             )
+        except (NoMatches, ScreenStackError):
+            return False
+
+    def _back_action_available(self) -> bool:
+        if self.active_tab_id in {EDIT_TAB, HELP_TAB, SETTINGS_TAB}:
+            return True
+        if self.active_tab_id != OVERVIEW_TAB:
+            return False
+        try:
+            return self.query_one(OverviewPane).search_has_focus
         except (NoMatches, ScreenStackError):
             return False
 
